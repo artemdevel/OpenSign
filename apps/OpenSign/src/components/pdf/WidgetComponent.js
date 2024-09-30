@@ -9,6 +9,7 @@ import {
   textWidget,
   widgets
 } from "../../constant/Utils";
+import { useTranslation } from "react-i18next";
 function WidgetComponent({
   dragSignature,
   signRef,
@@ -19,9 +20,7 @@ function WidgetComponent({
   addPositionOfSignature,
   signersdata,
   isSelectListId,
-  setSignerObjId,
   setIsSelectId,
-  setContractName,
   isSigners,
   dataTut,
   isMailSend,
@@ -40,6 +39,7 @@ function WidgetComponent({
   setIsAddSigner,
   uniqueId
 }) {
+  const { t } = useTranslation();
   const [isSignersModal, setIsSignersModal] = useState(false);
   const [, dropdown] = useDrag({
     type: "BOX",
@@ -330,7 +330,7 @@ function WidgetComponent({
           } hidden md:block h-full bg-base-100`}
         >
           <div className="mx-2 pr-2 pt-2 pb-1 text-[15px] text-base-content font-semibold border-b-[1px] border-base-300">
-            <span>Fields</span>
+            <span>{t("fields")}</span>
           </div>
 
           <div
@@ -348,7 +348,7 @@ function WidgetComponent({
       )}
       {isSignersModal && (
         <ModalUi
-          title={title ? title : "Recipients"}
+          title={title ? title : t("recipients")}
           isOpen={isSignersModal}
           handleClose={handleModal}
         >
@@ -358,9 +358,7 @@ function WidgetComponent({
                 signerPos={signerPos}
                 signersdata={signersdata}
                 isSelectListId={isSelectListId}
-                setSignerObjId={setSignerObjId}
                 setIsSelectId={setIsSelectId}
-                setContractName={setContractName}
                 setUniqueId={setUniqueId}
                 setRoleName={setRoleName}
                 handleDeleteUser={handleDeleteUser}
@@ -375,7 +373,7 @@ function WidgetComponent({
             </div>
           ) : (
             <div className=" p-[20px] text-[15px] font-medium text-center">
-              Please add a {title ? title : "recipients"}
+              {t("please-add")} {title ? title : t("recipients")}
             </div>
           )}
         </ModalUi>

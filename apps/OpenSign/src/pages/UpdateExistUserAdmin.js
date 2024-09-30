@@ -4,8 +4,9 @@ import Parse from "parse";
 import { NavLink, useNavigate } from "react-router-dom";
 import Alert from "../primitives/Alert";
 import Title from "../components/Title";
-
+import { useTranslation } from "react-i18next";
 const UpdateExistUserAdmin = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [formdata, setFormdata] = useState({ email: "", masterkey: "" });
   const [loader, setLoader] = useState(true);
@@ -14,14 +15,15 @@ const UpdateExistUserAdmin = () => {
   const [isAlert, setIsAlert] = useState({ type: "danger", msg: "" });
   useEffect(() => {
     checkIsAdminExist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkIsAdminExist = async () => {
     try {
       const isAdminExist = await Parse.Cloud.run("checkadminexist");
       if (isAdminExist !== "not_exist") {
-        console.log("isAdminExist ", isAdminExist);
-        setErrMsg("Admin already exists.");
+        // console.log("isAdminExist ", isAdminExist);
+        setErrMsg(t("admin-exists"));
       }
     } catch (err) {
       console.log("Err in checkadminexist", err);
@@ -41,19 +43,19 @@ const UpdateExistUserAdmin = () => {
       );
       // console.log("updateUserAsAdmin ", updateUserAsAdmin);
       if (updateUserAsAdmin === "admin_created") {
-        setIsAlert({ type: "success", msg: "Admin created" });
+        setIsAlert({ type: "success", msg: t("admin-created") });
         navigate("/");
       }
     } catch (err) {
       console.log("err in updateuserasadmin", err.code);
       if (err.code === 404) {
-        setIsAlert((prev) => ({ ...prev, msg: "Invalid masterkey" }));
+        setIsAlert((prev) => ({ ...prev, msg: t("invalid-masterkey") }));
       } else if (err.code === 101) {
-        setIsAlert((prev) => ({ ...prev, msg: "User not found" }));
+        setIsAlert((prev) => ({ ...prev, msg: t("user-not-found") }));
       } else if (err.code === 137) {
-        setIsAlert((prev) => ({ ...prev, msg: "Admin already exist" }));
+        setIsAlert((prev) => ({ ...prev, msg: t("admin-exists") }));
       } else {
-        setErrMsg("Something went wrong.");
+        setErrMsg(t("something-went-wrong-mssg"));
       }
     } finally {
       setIsSubmitLoading(false);
@@ -65,11 +67,7 @@ const UpdateExistUserAdmin = () => {
   return (
     <div className="h-screen flex justify-center">
       <Title title={"Add Admin"} />
-      {isAlert.msg && (
-        <Alert type={isAlert.type}>
-          <div className="ml-3">{isAlert.msg}</div>
-        </Alert>
-      )}
+      {isAlert.msg && <Alert type={isAlert.type}>{isAlert.msg}</Alert>}
       {loader ? (
         <div className="text-[grey] flex justify-center items-center text-lg md:text-2xl">
           <Loader />
@@ -90,7 +88,7 @@ const UpdateExistUserAdmin = () => {
                     </div>
                   )}
                   <h2 className="text-[30px] text-center mt-3 font-medium">
-                    Opensign Setup
+                    {t("opensign-Setup")}
                   </h2>
                   <NavLink
                     to="https://discord.com/invite/xe9TDuyAyj"
@@ -98,7 +96,7 @@ const UpdateExistUserAdmin = () => {
                     rel="noopener noreferrer"
                     className="text-center text-sm mt-1 text-[blue] cursor-pointer"
                   >
-                    Join our discord server
+                    {t("join-discord")}
                     <i
                       aria-hidden="true"
                       className="fa-brands fa-discord ml-1"
@@ -107,7 +105,8 @@ const UpdateExistUserAdmin = () => {
                   </NavLink>
                   <div className="px-6 py-3 text-xs">
                     <label>
-                      Email <span className="text-[red] text-[13px]">*</span>
+                      {t("email")}{" "}
+                      <span className="text-[red] text-[13px]">*</span>
                     </label>
                     <input
                       id="email"
@@ -117,14 +116,20 @@ const UpdateExistUserAdmin = () => {
                       onChange={(e) =>
                         setFormdata((prev) => ({
                           ...prev,
-                          email: e.target.value?.toLowerCase()
+                          email: e.target.value
+                            ?.toLowerCase()
+                            ?.replace(/\s/g, "")
                         }))
                       }
+                      onInvalid={(e) =>
+                        e.target.setCustomValidity(t("input-required"))
+                      }
+                      onInput={(e) => e.target.setCustomValidity("")}
                       required
                     />
                     <hr className="my-2 border-none" />
                     <label>
-                      Master key{" "}
+                      {t("master-key")}{" "}
                       <span className="text-[red] text-[13px]">*</span>
                     </label>
                     <input
@@ -137,6 +142,10 @@ const UpdateExistUserAdmin = () => {
                           masterkey: e.target.value
                         }))
                       }
+                      onInvalid={(e) =>
+                        e.target.setCustomValidity(t("input-required"))
+                      }
+                      onInput={(e) => e.target.setCustomValidity("")}
                       required
                     />
 
@@ -163,7 +172,7 @@ const UpdateExistUserAdmin = () => {
                       className="op-btn op-btn-primary w-full"
                       disabled={loader}
                     >
-                      {loader ? "Loading..." : "Next"}
+                      {loader ? t("loading") : t("next")}
                     </button>
                   </div>
                 </div>

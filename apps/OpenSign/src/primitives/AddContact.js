@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import Parse from "parse";
 import Loader from "./Loader";
+import { useTranslation } from "react-i18next";
 const AddContact = (props) => {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -44,111 +46,127 @@ const AddContact = (props) => {
     e.preventDefault();
     e.stopPropagation();
     setIsLoader(true);
-    try {
-      const contactQuery = new Parse.Object("contracts_Contactbook");
-      contactQuery.set("Name", name);
-      if (phone) {
-        contactQuery.set("Phone", phone);
-      }
-      contactQuery.set("Email", email);
-      contactQuery.set("UserRole", "contracts_Guest");
-
-      if (localStorage.getItem("TenantId")) {
-        contactQuery.set("TenantId", {
-          __type: "Pointer",
-          className: "partners_Tenant",
-          objectId: localStorage.getItem("TenantId")
-        });
-      }
-
+    if (localStorage.getItem("TenantId")) {
       try {
-        const _users = Parse.Object.extend("User");
-        const _user = new _users();
-        _user.set("name", name);
-        _user.set("username", email);
-        _user.set("email", email);
-        _user.set("password", email);
-        if (phone) {
-          _user.set("phone", phone);
-        }
+        const user = Parse.User.current();
+        const query = new Parse.Query("contracts_Contactbook");
+        query.equalTo("CreatedBy", user);
+        query.notEqualTo("IsDeleted", true);
+        query.equalTo("Email", email);
+        const res = await query.first();
+        if (!res) {
+          const contactQuery = new Parse.Object("contracts_Contactbook");
+          contactQuery.set("Name", name);
+          if (phone) {
+            contactQuery.set("Phone", phone);
+          }
+          contactQuery.set("Email", email);
+          contactQuery.set("UserRole", "contracts_Guest");
 
-        const user = await _user.save();
-        if (user) {
-          const currentUser = Parse.User.current();
-          contactQuery.set(
-            "CreatedBy",
-            Parse.User.createWithoutData(currentUser.id)
-          );
-
-          contactQuery.set("UserId", user);
-          const acl = new Parse.ACL();
-          acl.setPublicReadAccess(true);
-          acl.setPublicWriteAccess(true);
-          acl.setReadAccess(currentUser.id, true);
-          acl.setWriteAccess(currentUser.id, true);
-
-          contactQuery.setACL(acl);
-
-          const res = await contactQuery.save();
-
-          const parseData = JSON.parse(JSON.stringify(res));
-          props.details(parseData);
-          if (props.closePopup) {
-            props.closePopup();
+          if (localStorage.getItem("TenantId")) {
+            contactQuery.set("TenantId", {
+              __type: "Pointer",
+              className: "partners_Tenant",
+              objectId: localStorage.getItem("TenantId")
+            });
           }
 
+          try {
+            const _users = Parse.Object.extend("User");
+            const _user = new _users();
+            _user.set("name", name);
+            _user.set("username", email);
+            _user.set("email", email);
+            _user.set("password", email);
+            if (phone) {
+              _user.set("phone", phone);
+            }
+
+            const user = await _user.save();
+            if (user) {
+              const currentUser = Parse.User.current();
+              contactQuery.set(
+                "CreatedBy",
+                Parse.User.createWithoutData(currentUser.id)
+              );
+
+              contactQuery.set("UserId", user);
+              const acl = new Parse.ACL();
+              acl.setPublicReadAccess(true);
+              acl.setPublicWriteAccess(true);
+              acl.setReadAccess(currentUser.id, true);
+              acl.setWriteAccess(currentUser.id, true);
+
+              contactQuery.setACL(acl);
+
+              const res = await contactQuery.save();
+
+              const parseData = JSON.parse(JSON.stringify(res));
+              props.details(parseData);
+              if (props.closePopup) {
+                props.closePopup();
+              }
+
+              setIsLoader(false);
+              // Reset the form fields
+              setAddYourself(false);
+              setName("");
+              setPhone("");
+              setEmail("");
+            }
+          } catch (err) {
+            console.log("err ", err);
+            if (err.code === 202) {
+              const params = { email: email };
+              const userRes = await Parse.Cloud.run("getUserId", params);
+              const currentUser = Parse.User.current();
+              contactQuery.set(
+                "CreatedBy",
+                Parse.User.createWithoutData(currentUser.id)
+              );
+
+              contactQuery.set("UserId", {
+                __type: "Pointer",
+                className: "_User",
+                objectId: userRes.id
+              });
+              const acl = new Parse.ACL();
+              acl.setPublicReadAccess(true);
+              acl.setPublicWriteAccess(true);
+              acl.setReadAccess(currentUser.id, true);
+              acl.setWriteAccess(currentUser.id, true);
+
+              contactQuery.setACL(acl);
+              const res = await contactQuery.save();
+
+              const parseData = JSON.parse(JSON.stringify(res));
+              if (props.details) {
+                props.details(parseData);
+              }
+
+              if (props.closePopup) {
+                props.closePopup();
+              }
+              setIsLoader(false);
+              // Reset the form fields
+              setAddYourself(false);
+              setName("");
+              setPhone("");
+              setEmail("");
+            }
+          }
+        } else {
+          alert(t("add-signer-alert"));
           setIsLoader(false);
-          // Reset the form fields
-          setAddYourself(false);
-          setName("");
-          setPhone("");
-          setEmail("");
         }
       } catch (err) {
-        console.log("err ", err);
-        if (err.code === 202) {
-          const params = { email: email };
-          const userRes = await Parse.Cloud.run("getUserId", params);
-          const currentUser = Parse.User.current();
-          contactQuery.set(
-            "CreatedBy",
-            Parse.User.createWithoutData(currentUser.id)
-          );
-
-          contactQuery.set("UserId", {
-            __type: "Pointer",
-            className: "_User",
-            objectId: userRes.id
-          });
-          const acl = new Parse.ACL();
-          acl.setPublicReadAccess(true);
-          acl.setPublicWriteAccess(true);
-          acl.setReadAccess(currentUser.id, true);
-          acl.setWriteAccess(currentUser.id, true);
-
-          contactQuery.setACL(acl);
-          const res = await contactQuery.save();
-
-          const parseData = JSON.parse(JSON.stringify(res));
-          if (props.details) {
-            props.details(parseData);
-          }
-
-          if (props.closePopup) {
-            props.closePopup();
-          }
-          setIsLoader(false);
-          // Reset the form fields
-          setAddYourself(false);
-          setName("");
-          setPhone("");
-          setEmail("");
-        }
+        // console.log("err", err);
+        setIsLoader(false);
+        alert(t("something-went-wrong-mssg"));
       }
-    } catch (err) {
-      // console.log("err", err);
+    } else {
       setIsLoader(false);
-      alert("something went wrong!");
+      alert(t("something-went-wrong-mssg"));
     }
   };
 
@@ -175,7 +193,7 @@ const AddContact = (props) => {
         </div>
       )}
       <div className="w-full mx-auto p-[8px]">
-        <div className="text-[14px] font-[700]">Add Contact</div>
+        <div className="text-[14px] font-[700]">{t("add-contact")}</div>
         {isUserExist && (
           <div className="mb-[0.75rem] flex items-center mt-1">
             <input
@@ -189,14 +207,14 @@ const AddContact = (props) => {
               htmlFor="addYourself"
               className="ml-[0.5rem] text-base-content mb-0"
             >
-              Add Yourself
+              {t("add-yourself")}
             </label>
           </div>
         )}
         <form className="text-base-content" onSubmit={handleSubmit}>
           <div className="mb-[0.75rem]">
             <label htmlFor="name" className="text-[13px]">
-              Name
+              {t("name")}
               <span className="text-[13px] text-[red]"> *</span>
             </label>
             <input
@@ -204,6 +222,8 @@ const AddContact = (props) => {
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onInvalid={(e) => e.target.setCustomValidity(t("input-required"))}
+              onInput={(e) => e.target.setCustomValidity("")}
               required
               disabled={addYourself}
               className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
@@ -211,14 +231,18 @@ const AddContact = (props) => {
           </div>
           <div className="mb-[0.75rem]">
             <label htmlFor="email" className="text-[13px]">
-              Email
+              {t("email")}
               <span className="text-[13px] text-[red]"> *</span>
             </label>
             <input
               type="email"
               id="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value?.toLowerCase())}
+              onChange={(e) =>
+                setEmail(e.target.value?.toLowerCase()?.replace(/\s/g, ""))
+              }
+              onInvalid={(e) => e.target.setCustomValidity(t("input-required"))}
+              onInput={(e) => e.target.setCustomValidity("")}
               required
               disabled={addYourself}
               className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs lowercase"
@@ -226,7 +250,7 @@ const AddContact = (props) => {
           </div>
           <div className="mb-[0.75rem]">
             <label htmlFor="phone" className="text-[13px]">
-              Phone
+              {t("phone")}
             </label>
             <input
               type="text"
@@ -240,14 +264,14 @@ const AddContact = (props) => {
 
           <div className="mt-6 flex justify-start gap-2">
             <button type="submit" className="op-btn op-btn-primary">
-              Submit
+              {t("submit")}
             </button>
             <button
               type="button"
               onClick={() => handleReset()}
               className="op-btn op-btn-secondary"
             >
-              Reset
+              {t("reset")}
             </button>
           </div>
         </form>

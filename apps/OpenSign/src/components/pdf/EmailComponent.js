@@ -1,38 +1,63 @@
 import React, { useState } from "react";
-import { saveAs } from "file-saver";
 import axios from "axios";
-import { getBase64FromUrl } from "../../constant/Utils";
+import { handleToPrint } from "../../constant/Utils";
 import { themeColor, emailRegex } from "../../constant/const";
-import printModule from "print-js";
 import Loader from "../../primitives/Loader";
 import ModalUi from "../../primitives/ModalUi";
+import { useTranslation } from "react-i18next";
 
 function EmailComponent({
   isEmail,
   pdfUrl,
   setIsEmail,
   setSuccessEmail,
-  pdfName,
+  pdfDetails,
   sender,
   setIsAlert,
   extUserId,
-  activeMailAdapter
+  activeMailAdapter,
+  setIsDownloadModal
 }) {
+  const { t } = useTranslation();
   const [emailList, setEmailList] = useState([]);
   const [emailValue, setEmailValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [emailErr, setEmailErr] = useState(false);
+  const [isDownloading, setIsDownloading] = useState("");
+  const isAndroid = /Android/i.test(navigator.userAgent);
   //function for send email
   const sendEmail = async () => {
+    const pdfName = pdfDetails[0]?.Name;
     setIsLoading(true);
-
     let sendMail;
+
+    const docId = !pdfDetails?.[0]?.IsEnableOTP
+      ? pdfDetails?.[0]?.objectId
+      : "";
+    let presignedUrl = pdfUrl;
+    try {
+      // const url = await Parse.Cloud.run("getsignedurl", { url: pdfUrl });
+      const axiosRes = await axios.post(
+        `${localStorage.getItem("baseUrl")}/functions/getsignedurl`,
+        { url: pdfUrl, docId: docId },
+        {
+          headers: {
+            "content-type": "Application/json",
+            "X-Parse-Application-Id": localStorage.getItem("parseAppId"),
+            "X-Parse-Session-Token": localStorage.getItem("accesstoken")
+          }
+        }
+      );
+      presignedUrl = axiosRes.data.result;
+    } catch (err) {
+      console.log("err in getsignedurl", err);
+    }
     for (let i = 0; i < emailList.length; i++) {
       try {
         const imgPng =
           "https://qikinnovation.ams3.digitaloceanspaces.com/logo.png";
 
-        let url = `${localStorage.getItem("baseUrl")}functions/sendmailv3/`;
+        let url = `${localStorage.getItem("baseUrl")}functions/sendmailv3`;
         const headers = {
           "Content-Type": "application/json",
           "X-Parse-Application-Id": localStorage.getItem("parseAppId"),
@@ -44,7 +69,7 @@ function EmailComponent({
           mailProvider: activeMailAdapter,
           extUserId: extUserId,
           pdfName: pdfName,
-          url: pdfUrl,
+          url: presignedUrl,
           recipient: emailList[i],
           subject: `${sender.name} has signed the doc - ${pdfName}`,
           from: sender.email,
@@ -68,36 +93,25 @@ function EmailComponent({
         setIsEmail(false);
         setIsAlert({
           isShow: true,
-          alertMessage: "something went wrong"
+          alertMessage: t("something-went-wrong-mssg")
         });
       }
     }
-
-    if (sendMail && sendMail.data.result.status === "success") {
+    if (sendMail?.data?.result?.status === "success") {
       setSuccessEmail(true);
+      setIsEmail(false);
       setTimeout(() => {
         setSuccessEmail(false);
-        setIsEmail(false);
         setEmailValue("");
         setEmailList([]);
       }, 1500);
-
       setIsLoading(false);
-    } else if (sendMail && sendMail.data.result.status === "error") {
-      setIsLoading(false);
-      setIsEmail(false);
-      setIsAlert({
-        isShow: true,
-        alertMessage: "something went wrong"
-      });
-      setEmailValue("");
-      setEmailList([]);
     } else {
       setIsLoading(false);
       setIsEmail(false);
       setIsAlert({
         isShow: true,
-        alertMessage: "something went wrong"
+        alertMessage: t("something-went-wrong-mssg")
       });
       setEmailValue("");
       setEmailList([]);
@@ -111,7 +125,7 @@ function EmailComponent({
   };
   //function for get email value
   const handleEmailValue = (e) => {
-    const value = e.target.value;
+    const value = e.target.value?.toLowerCase()?.replace(/\s/g, "");
     setEmailErr(false);
     setEmailValue(value);
   };
@@ -138,43 +152,11 @@ function EmailComponent({
       }
     }
   };
-
-  // function for print signed pdf
-  const handleToPrint = async (event) => {
-    event.preventDefault();
-
-    const pdf = await getBase64FromUrl(pdfUrl);
-    const isAndroidDevice = navigator.userAgent.match(/Android/i);
-    const isAppleDevice =
-      (/iPad|iPhone|iPod/.test(navigator.platform) ||
-        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) &&
-      !window.MSStream;
-    if (isAndroidDevice || isAppleDevice) {
-      const byteArray = Uint8Array.from(
-        atob(pdf)
-          .split("")
-          .map((char) => char.charCodeAt(0))
-      );
-      const blob = new Blob([byteArray], { type: "application/pdf" });
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, "_blank");
-    } else {
-      printModule({ printable: pdf, type: "pdf", base64: true });
-    }
+  const handleClose = () => {
+    setIsEmail(false);
+    setEmailValue("");
+    setEmailList([]);
   };
-
-  //handle download signed pdf
-  const handleDownloadPdf = () => {
-    saveAs(pdfUrl, `${sanitizeFileName(pdfName)}_signed_by_OpenSign™.pdf`);
-  };
-
-  const sanitizeFileName = (pdfName) => {
-    // Replace spaces with underscore
-    return pdfName.replace(/ /g, "_");
-  };
-
-  const isAndroid = /Android/i.test(navigator.userAgent);
-
   return (
     <div>
       {/* isEmail */}
@@ -184,36 +166,46 @@ function EmailComponent({
             <div className="absolute w-full h-full flex flex-col justify-center items-center z-[20] bg-[#e6f2f2]/70">
               <Loader />
               <span className="text-[12px] text-base-content">
-                This might take some time
+                {t("loader")}
               </span>
+            </div>
+          )}
+          {isDownloading === "pdf" && (
+            <div className="fixed z-[200] inset-0 flex justify-center items-center bg-black bg-opacity-30">
+              <Loader />
             </div>
           )}
           <div className="flex justify-between items-center py-[10px] px-[20px] border-b-[1px] border-base-content">
             <span className="text-base-content font-semibold">
-              Successfully signed!
+              {t("successfully-signed")}
             </span>
             <div className="flex flex-row">
               {!isAndroid && (
                 <button
-                  onClick={handleToPrint}
+                  onClick={(e) =>
+                    handleToPrint(e, pdfUrl, setIsDownloading, pdfDetails)
+                  }
                   className="op-btn op-btn-neutral op-btn-sm text-[15px]"
                 >
                   <i className="fa-light fa-print" aria-hidden="true"></i>
-                  Print
+                  {t("print")}
                 </button>
               )}
               <button
                 className="op-btn op-btn-primary op-btn-sm text-[15px] ml-2"
-                onClick={() => handleDownloadPdf()}
+                onClick={() => {
+                  handleClose();
+                  setIsDownloadModal(true);
+                }}
               >
                 <i className="fa-light fa-download" aria-hidden="true"></i>
-                Download
+                {t("download")}
               </button>
             </div>
           </div>
           <div className="h-full p-[20px]">
             <p className="font-medium text-[15px] mb-[5px] text-base-content align-baseline">
-              Recipients added here will get a copy of the signed document.
+              {t("email-mssg")}
             </p>
             {emailList.length > 0 ? (
               <div className="p-0 border-[1.5px] op-border-primary rounded w-full text-[15px]">
@@ -245,6 +237,10 @@ function EmailComponent({
                     onChange={handleEmailValue}
                     onKeyDown={handleEnterPress}
                     onBlur={() => emailValue && handleEnterPress("add")}
+                    onInvalid={(e) =>
+                      e.target.setCustomValidity(t("input-required"))
+                    }
+                    onInput={(e) => e.target.setCustomValidity("")}
                     required
                   />
                 )}
@@ -257,15 +253,19 @@ function EmailComponent({
                   className="p-[10px] pb-[20px] rounded w-full text-[15px] outline-none bg-transparent border-[1.5px] op-border-primary"
                   onChange={handleEmailValue}
                   onKeyDown={handleEnterPress}
-                  placeholder="Add an email address and hit enter"
+                  placeholder={t("enter-email-plaholder")}
                   onBlur={() => emailValue && handleEnterPress("add")}
+                  onInvalid={(e) =>
+                    e.target.setCustomValidity(t("input-required"))
+                  }
+                  onInput={(e) => e.target.setCustomValidity("")}
                   required
                 />
               </div>
             )}
             {emailErr && (
               <p className="text-xs text-[red] ml-1.5 mt-0.5">
-                please provide correct email address
+                {t("email-error-1")}
               </p>
             )}
             <button
@@ -278,10 +278,8 @@ function EmailComponent({
             </button>
 
             <div className="bg-[#e3e2e1] mt-[10px] p-[5px] rounded">
-              <span className="font-bold">Note: </span>
-              <span className="text-[15px]">
-                You can only send to ten recipients at a time.
-              </span>
+              <span className="font-bold">{t("report-heading.Note")}: </span>
+              <span className="text-[15px]">{t("email-error-2")}</span>
             </div>
             <hr className="w-full my-[15px] bg-base-content" />
             <button
@@ -289,18 +287,14 @@ function EmailComponent({
               className="op-btn op-btn-secondary"
               onClick={() => emailList.length > 0 && sendEmail()}
             >
-              Send
+              {t("send")}
             </button>
             <button
               type="button"
               className="op-btn op-btn-ghost ml-2"
-              onClick={() => {
-                setIsEmail(false);
-                setEmailValue("");
-                setEmailList([]);
-              }}
+              onClick={() => handleClose()}
             >
-              Close
+              {t("close")}
             </button>
           </div>
         </ModalUi>

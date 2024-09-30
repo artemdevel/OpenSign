@@ -4,16 +4,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import ModalUi from "./ModalUi";
 import AddSigner from "../components/AddSigner";
-import { isEnableSubscription } from "../constant/const";
+import { isEnableSubscription, isStaging } from "../constant/const";
 import Alert from "./Alert";
 import Tooltip from "./Tooltip";
 import { RWebShare } from "react-web-share";
 import Tour from "reactour";
 import Parse from "parse";
 import {
-  checkIsSubscribedTeam,
+  checkIsSubscribed,
   copytoData,
   fetchUrl,
+  getSignedUrl,
   replaceMailVaribles
 } from "../constant/Utils";
 import Confetti from "react-confetti";
@@ -21,14 +22,20 @@ import EditorToolbar, {
   module1,
   formats
 } from "../components/pdf/EditorToolbar";
-import ReactQuill from "react-quill";
-import "react-quill/dist/quill.snow.css";
+import ReactQuill from "react-quill-new";
+import "../styles/quill.css";
 import BulkSendUi from "../components/BulkSendUi";
 import Loader from "./Loader";
 import Select from "react-select";
 import SubscribeCard from "./SubscribeCard";
+import { validplan } from "../json/plansArr";
+import { serverUrl_fn } from "../constant/appinfo";
+import { useTranslation } from "react-i18next";
+import DownloadPdfZip from "./DownloadPdfZip";
+import EmbedTab from "../components/pdf/EmbedTab";
 
 const ReportTable = (props) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const isDashboard =
@@ -65,20 +72,16 @@ const ReportTable = (props) => {
   const [publicUserName, setIsPublicUserName] = useState("");
   const [isViewShare, setIsViewShare] = useState({});
   const [isSubscribe, setIsSubscribe] = useState(true);
+  const [isModal, setIsModal] = useState({});
   const [reason, setReason] = useState("");
+  const [isDownloadModal, setIsDownloadModal] = useState(false);
+  const [isEmbed, setIsEmbed] = useState(false);
+  const [isPublicTour, setIsPublicTour] = useState();
   const Extand_Class = localStorage.getItem("Extand_Class");
   const extClass = Extand_Class && JSON.parse(Extand_Class);
   const startIndex = (currentPage - 1) * props.docPerPage;
   const { isMoreDocs, setIsNextRecord } = props;
-  // For loop is used to calculate page numbers visible below table
-  // Initialize pageNumbers using useMemo to avoid unnecessary re-creation
-  // const pageNumbers = useMemo(() => {
-  //   const calculatedPageNumbers = [];
-  //   for (let i = 1; i <= Math.ceil(props.List.length / props.docPerPage); i++) {
-  //     calculatedPageNumbers.push(i);
-  //   }
-  //   return calculatedPageNumbers;
-  // }, [props.List, props.docPerPage]);
+
   const getPaginationRange = () => {
     const totalPageNumbers = 7; // Adjust this value to show more/less page numbers
     const pages = [];
@@ -270,7 +273,8 @@ const ReportTable = (props) => {
                 Signers: signers,
                 SendinOrder: Doc?.SendinOrder || false,
                 AutomaticReminders: Doc?.AutomaticReminders || false,
-                RemindOnceInEvery: Doc?.RemindOnceInEvery || 5
+                RemindOnceInEvery: Doc?.RemindOnceInEvery || 5,
+                IsEnableOTP: Doc?.IsEnableOTP || false
               };
               try {
                 const res = await axios.post(
@@ -302,7 +306,7 @@ const ReportTable = (props) => {
                 setIsAlert(true);
                 setAlertMsg({
                   type: "danger",
-                  message: "Something went wrong, Please try again later!"
+                  message: t("something-went-wrong-mssg")
                 });
                 setTimeout(() => setIsAlert(false), 1500);
                 setActLoader({});
@@ -314,7 +318,7 @@ const ReportTable = (props) => {
             setIsAlert(true);
             setAlertMsg({
               type: "danger",
-              message: "Something went wrong, Please try again later!"
+              message: t("something-went-wrong-mssg")
             });
             setTimeout(() => setIsAlert(false), 1500);
             setActLoader({});
@@ -324,7 +328,7 @@ const ReportTable = (props) => {
           setIsAlert(true);
           setAlertMsg({
             type: "danger",
-            message: "Something went wrong, Please try again later!"
+            message: t("something-went-wrong-mssg")
           });
           setTimeout(() => setIsAlert(false), 1500);
           setActLoader({});
@@ -352,10 +356,10 @@ const ReportTable = (props) => {
       handleBulkSend(item);
     } else if (act.action === "sharewith") {
       if (isEnableSubscription) {
-        const getIsSubscribe = await checkIsSubscribedTeam();
-        setIsSubscribe(getIsSubscribe);
+        const subscribe = await checkIsSubscribed();
+        setIsSubscribe(subscribe);
       } else {
-        setIsSubscribe(true);
+        setIsSubscribe({ plan: "teams-yearly", isValid: true });
       }
       if (item?.SharedWith && item?.SharedWith.length > 0) {
         // below code is used to get existing sharewith teams and formated them as per react-select
@@ -366,6 +370,23 @@ const ReportTable = (props) => {
         setSelectedTeam(formatedList);
       }
       setIsShareWith({ [item.objectId]: true });
+    } else if (act.action === "Embed") {
+      handleEmbedFunction(item);
+    } else if (act.action === "CopyTemplateId") {
+      copyTemplateId(item.objectId);
+    } else if (act.action === "CopyPublicURL") {
+      const isPublic = item?.IsPublic;
+      if (isPublic) {
+        let publicUrl = "";
+        if (isStaging) {
+          publicUrl = `https://staging.opensign.me/publicsign?templateid=${item.objectId}`;
+        } else {
+          publicUrl = `https://opensign.me/publicsign?templateid=${item.objectId}`;
+        }
+        copyTemplateId(publicUrl);
+      } else {
+        setIsPublicTour({ [item.objectId]: true });
+      }
     }
   };
   // Get current list
@@ -374,8 +395,18 @@ const ReportTable = (props) => {
   const currentList = props.List?.slice(indexOfFirstDoc, indexOfLastDoc);
 
   // Change page
-  const paginateFront = () => setCurrentPage(currentPage + 1);
-  const paginateBack = () => setCurrentPage(currentPage - 1);
+  const paginateFront = () => {
+    const lastValue = pageNumbers?.[pageNumbers?.length - 1];
+    if (currentPage < lastValue) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const paginateBack = () => {
+    if (startIndex > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
 
   const handleContactFormModal = () => {
     setIsContactform(!isContactform);
@@ -393,9 +424,7 @@ const ReportTable = (props) => {
       Templates: "contracts_Template"
     };
     try {
-      const serverUrl = process.env.REACT_APP_SERVERURL
-        ? process.env.REACT_APP_SERVERURL
-        : window.location.origin + "/api/app";
+      const serverUrl = serverUrl_fn();
       const cls = clsObj[props.ReportName] || "contracts_Document";
       const url = serverUrl + `/classes/${cls}/`;
       const body =
@@ -414,7 +443,7 @@ const ReportTable = (props) => {
         setIsAlert(true);
         setAlertMsg({
           type: "success",
-          message: "Record deleted successfully!"
+          message: t("record-delete-alert")
         });
         setTimeout(() => setIsAlert(false), 1500);
         const upldatedList = props.List.filter(
@@ -427,7 +456,7 @@ const ReportTable = (props) => {
       setIsAlert(true);
       setAlertMsg({
         type: "danger",
-        message: "Something went wrong, Please try again later!"
+        message: t("something-went-wrong-mssg")
       });
       setTimeout(() => setIsAlert(false), 1500);
       setActLoader({});
@@ -447,7 +476,6 @@ const ReportTable = (props) => {
     }
     setReason("");
   };
-
   const handleShare = (item) => {
     setActLoader({ [item.objectId]: true });
     const host = window.location.origin;
@@ -473,14 +501,26 @@ const ReportTable = (props) => {
   };
 
   const copytoclipboard = (share) => {
-    navigator.clipboard.writeText(share.url);
+    copytoData(share.url);
     setCopied({ ...copied, [share.email]: true });
   };
   //function to handle revoke/decline docment
   const handleRevoke = async (item) => {
+    const senderUser = localStorage.getItem(
+      `Parse/${localStorage.getItem("parseAppId")}/currentUser`
+    );
+    const jsonSender = JSON.parse(senderUser);
     setIsRevoke({});
     setActLoader({ [`${item.objectId}`]: true });
-    const data = { IsDeclined: true, DeclineReason: reason };
+    const data = {
+      IsDeclined: true,
+      DeclineReason: reason,
+      DeclineBy: {
+        __type: "Pointer",
+        className: "_User",
+        objectId: jsonSender?.objectId
+      }
+    };
     await axios
       .put(
         `${localStorage.getItem("baseUrl")}classes/contracts_Document/${
@@ -498,19 +538,54 @@ const ReportTable = (props) => {
       .then(async (result) => {
         const res = result.data;
         if (res) {
-          setReason("");
           setActLoader({});
           setIsAlert(true);
           setAlertMsg({
             type: "success",
-            message: "Record revoked successfully!"
+            message: t("record-revoke-alert")
           });
           setTimeout(() => setIsAlert(false), 1500);
           const upldatedList = props.List.filter(
             (x) => x.objectId !== item.objectId
           );
           props.setList(upldatedList);
+          const params = {
+            event: "declined",
+            body: {
+              objectId: item.objectId,
+              file: item?.SignedUrl || item?.URL,
+              name: item?.Name,
+              note: item?.Note || "",
+              description: item?.Description || "",
+              signers: item?.Signers?.map((x) => ({
+                name: x?.Name,
+                email: x?.Email,
+                phone: x?.Phone
+              })),
+              declinedBy: jsonSender?.email,
+              declinedReason: reason,
+              declinedAt: new Date(),
+              createdAt: item?.createdAt
+            }
+          };
+
+          try {
+            await axios.post(
+              `${localStorage.getItem("baseUrl")}functions/callwebhook`,
+              params,
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Parse-Application-Id": localStorage.getItem("parseAppId"),
+                  sessiontoken: localStorage.getItem("accesstoken")
+                }
+              }
+            );
+          } catch (err) {
+            console.log("Err ", err);
+          }
         }
+        setReason("");
       })
       .catch((err) => {
         console.log("err", err);
@@ -518,7 +593,7 @@ const ReportTable = (props) => {
         setIsAlert(true);
         setAlertMsg({
           type: "danger",
-          message: "Something went wrong, Please try again later!"
+          message: t("something-went-wrong-mssg")
         });
         setTimeout(() => setIsAlert(false), 1500);
         setActLoader({});
@@ -526,10 +601,7 @@ const ReportTable = (props) => {
   };
 
   async function checkTourStatus() {
-    const currentUser = Parse.User.current();
-    const cloudRes = await Parse.Cloud.run("getUserDetails", {
-      email: currentUser.get("email")
-    });
+    const cloudRes = await Parse.Cloud.run("getUserDetails");
     const res = { data: cloudRes.toJSON() };
     if (res.data && res.data.TourStatus && res.data.TourStatus.length > 0) {
       const tourStatus = res.data.TourStatus;
@@ -598,14 +670,19 @@ const ReportTable = (props) => {
     setActLoader({ [`${item.objectId}`]: true });
     const url = item?.SignedUrl || item?.URL || "";
     const pdfName = item?.Name || "exported_file";
+    const isCompleted = item?.IsCompleted || false;
     if (url) {
       try {
-        const signedUrl = await Parse.Cloud.run("getsignedurl", { url: url });
-        await fetchUrl(signedUrl, pdfName);
+        if (isCompleted) {
+          setIsDownloadModal({ [item.objectId]: true });
+        } else {
+          const signedUrl = await getSignedUrl(url);
+          await fetchUrl(signedUrl, pdfName);
+        }
         setActLoader({});
       } catch (err) {
         console.log("err in getsignedurl", err);
-        alert("something went wrong, please try again later.");
+        alert(t("something-went-wrong-mssg"));
         setActLoader({});
       }
     }
@@ -727,7 +804,7 @@ const ReportTable = (props) => {
       sessionToken: localStorage.getItem("accesstoken")
     };
     let params = {
-      mailProvider: doc?.ExtUserPtr?.active_mail_adapter,
+      mailProvider: doc?.ExtUserPtr?.active_mail_adapter || "",
       extUserId: doc?.ExtUserPtr?.objectId,
       recipient: userDetails?.Email,
       subject: mail.subject,
@@ -738,12 +815,12 @@ const ReportTable = (props) => {
       const res = await axios.post(url, params, { headers: headers });
       if (res?.data?.result?.status === "success") {
         setIsAlert(true);
-        setAlertMsg({ type: "success", message: "Mail sent successfully." });
+        setAlertMsg({ type: "success", message: t("mail-sent-alert") });
       } else {
         setIsAlert(true);
         setAlertMsg({
           type: "danger",
-          message: "Something went wrong, please try again later!"
+          message: t("something-went-wrong-mssg")
         });
       }
     } catch (err) {
@@ -751,7 +828,7 @@ const ReportTable = (props) => {
       setIsAlert(true);
       setAlertMsg({
         type: "danger",
-        message: "Something went wrong, please try again later!"
+        message: t("something-went-wrong-mssg")
       });
     } finally {
       setTimeout(() => setIsAlert(false), 1500);
@@ -792,20 +869,20 @@ const ReportTable = (props) => {
       if (count > 1) {
         setAlertMsg({
           type: "success",
-          message: count + " Document sent successfully!"
+          message: count + " " + t("document-sent-alert")
         });
         setTimeout(() => setIsAlert(false), 1500);
       } else {
         setAlertMsg({
           type: "success",
-          message: count + " Document sent successfully!"
+          message: count + " " + t("document-sent-alert")
         });
         setTimeout(() => setIsAlert(false), 1500);
       }
     } else {
       setAlertMsg({
         type: "danger",
-        message: "Something went wrong, Please try again later!"
+        message: t("something-went-wrong-mssg")
       });
       setTimeout(() => setIsAlert(false), 1500);
     }
@@ -840,14 +917,10 @@ const ReportTable = (props) => {
       console.log("err in fetch template in bulk modal", err);
       setIsBulkSend({});
       setIsAlert(true);
-      setAlertMsg({
-        type: "danger",
-        message: "Something went wrong, Please try again later!"
-      });
+      setAlertMsg({ type: "danger", message: t("something-went-wrong-mssg") });
       setTimeout(() => setIsAlert(false), 1500);
     }
   };
-
   //function to make template public and set public role
   const handlePublicTemplate = async (item) => {
     if (selectedPublicRole || !props.isPublic[item.objectId]) {
@@ -866,7 +939,7 @@ const ReportTable = (props) => {
           if (props.isPublic[item.objectId]) {
             setAlertMsg({
               type: "success",
-              message: "You have successfully made the template public."
+              message: t("template-public-alert-1")
             });
             setIsCelebration(true);
             setTimeout(() => {
@@ -878,7 +951,7 @@ const ReportTable = (props) => {
           } else {
             setAlertMsg({
               type: "success",
-              message: "You have successfully made the template private."
+              message: t("template-public-alert-2")
             });
             setSelectedPublicRole("");
           }
@@ -895,7 +968,7 @@ const ReportTable = (props) => {
         setIsAlert(true);
         setAlertMsg({
           type: "danger",
-          message: "Something went wrong, Please try again later!"
+          message: t("something-went-wrong-mssg")
         });
         setTimeout(() => setIsAlert(false), 1500);
         props.setIsPublic((prevStates) => ({
@@ -907,7 +980,7 @@ const ReportTable = (props) => {
       setIsAlert(true);
       setAlertMsg({
         type: "danger",
-        message: "You need to select a role for the public signers."
+        message: t("template-public-alert-3")
       });
       setTimeout(() => setIsAlert(false), 1500);
     }
@@ -920,7 +993,7 @@ const ReportTable = (props) => {
   const handlePublicChange = async (e, item) => {
     const getPlaceholder = item?.Placeholders;
     //checking index for public role
-    const getIndex = getPlaceholder.findIndex((obj) => !obj.signerObjId);
+    const getIndex = getPlaceholder?.findIndex((obj) => !obj?.signerObjId);
     //conditon to check empty role is exist or not
     if (getPlaceholder && getPlaceholder.length > 0 && getIndex >= 0) {
       const signers = item?.Signers;
@@ -961,8 +1034,7 @@ const ReportTable = (props) => {
             setIsAlert(true);
             setAlertMsg({
               type: "danger",
-              message:
-                " Please ensure there's at least one signature widget added for all signers."
+              message: t("template-public-alert-4")
             });
             setTimeout(() => setIsAlert(false), 5000);
           }
@@ -970,8 +1042,7 @@ const ReportTable = (props) => {
           setIsAlert(true);
           setAlertMsg({
             type: "danger",
-            message:
-              "Since this template has send-in-order enabled, the public role must be positioned at the top."
+            message: t("template-public-alert-5")
           });
           setTimeout(() => setIsAlert(false), 5000);
         }
@@ -979,8 +1050,7 @@ const ReportTable = (props) => {
         setIsAlert(true);
         setAlertMsg({
           type: "danger",
-          message:
-            "Please attach signers to all roles except for the public role user."
+          message: t("template-public-alert-6")
         });
         setTimeout(() => setIsAlert(false), 5000);
       }
@@ -988,25 +1058,48 @@ const ReportTable = (props) => {
       setIsAlert(true);
       setAlertMsg({
         type: "danger",
-        message:
-          "Please assign at least one public role to make this template public."
+        message: t("template-public-alert-7")
       });
       setTimeout(() => setIsAlert(false), 5000);
     }
   };
 
+  const publicUrl = () => {
+    const subDomain = isStaging
+      ? `https://staging.opensign.me/`
+      : `https://opensign.me/`;
+    const url = `${subDomain}${publicUserName}`;
+    return url;
+  };
   // function to copy public profile links
   const copytoProfileLink = () => {
-    const url = `https://opensign.me/${publicUserName}`;
+    const url = publicUrl();
     copytoData(url);
     setIsAlert(true);
     setAlertMsg({
       type: "success",
-      message: "Copied."
+      message: t("copied")
     });
-    setTimeout(() => setIsAlert(false), 1500);
+    setCopied({ ...copied, publicprofile: true });
+    setTimeout(() => {
+      setIsAlert(false);
+      setCopied(false);
+    }, 1500);
   };
 
+  const copyTemplateId = (templateid) => {
+    copytoData(templateid);
+    setIsAlert(true);
+    setAlertMsg({
+      type: "success",
+      message: t("copied")
+    });
+    setCopied({ ...copied, templateid: true });
+    setTimeout(() => {
+      setIsAlert(false);
+      setCopied(false);
+    }, 1500);
+  };
   const handleShowRole = (item) => {
     const getRole = item.Placeholders.find((data) => !data.signerObjId);
     return getRole?.Role;
@@ -1031,21 +1124,40 @@ const ReportTable = (props) => {
         setIsAlert(true);
         setAlertMsg({
           type: "success",
-          message: "Template Shared successfully."
+          message: t("template-share-alert")
         });
       }
     } catch (err) {
       setIsAlert(true);
       setAlertMsg({
         type: "danger",
-        message: "Something went wrong, Please try again later."
+        message: t("something-went-wrong-mssg")
       });
     } finally {
       setActLoader({});
       setTimeout(() => setIsAlert(false), 1500);
     }
   };
+  const handleEmbedFunction = async (item) => {
+    setIsEmbed(true);
+    setIsPublicProfile({
+      [item.objectId]: true
+    });
+    let extendUser = JSON.parse(localStorage.getItem("Extand_Class"));
+    setIsPublicUserName(extendUser[0]?.UserName || "");
+  };
 
+  const publicTourConfig = [
+    {
+      selector: '[data-tut="IsPublic"]',
+      content: t("public-tour-message"),
+      position: "top",
+      style: { fontSize: "13px" }
+    }
+  ];
+  const closePublicTour = () => {
+    setIsPublicTour();
+  };
   return (
     <div className="relative">
       {Object.keys(actLoader)?.length > 0 && (
@@ -1053,28 +1165,47 @@ const ReportTable = (props) => {
           <Loader />
         </div>
       )}
-      <div className="p-2 w-full overflow-auto bg-base-100 text-base-content op-card shadow-lg">
+      <div className="p-2 w-full overflow-hidden bg-base-100 text-base-content op-card shadow-lg">
         {isCelebration && (
           <div className="relative z-[1000]">
-            <Confetti width={window.innerWidth} height={window.innerHeight} />
+            <Confetti
+              width={window.innerWidth}
+              height={window.innerHeight}
+              recycle={false} // Prevents confetti from repeating
+              gravity={0.1} // Adjust the gravity to control the speed
+            />
           </div>
         )}
         {isAlert && <Alert type={alertMsg.type}>{alertMsg.message}</Alert>}
         {props.tourData && props.ReportName === "Templates" && (
-          <Tour
-            onRequestClose={closeTour}
-            steps={props.tourData}
-            isOpen={isTour}
-            // rounded={5}
-            closeWithMask={false}
-          />
+          <>
+            <Tour
+              onRequestClose={closeTour}
+              steps={props.tourData}
+              isOpen={isTour}
+              // rounded={5}
+              closeWithMask={false}
+            />
+            {isPublicTour && (
+              <Tour
+                showNumber={false}
+                showNavigation={false}
+                showNavigationNumber={false}
+                onRequestClose={closePublicTour}
+                steps={publicTourConfig}
+                isOpen={true}
+                rounded={5}
+                closeWithMask={false}
+              />
+            )}
+          </>
         )}
         <div className="flex flex-row items-center justify-between my-2 mx-3 text-[20px] md:text-[23px]">
           <div className="font-light">
-            {props.ReportName}{" "}
+            {t(`report-name.${props.ReportName}`)}
             {props.report_help && (
               <span className="text-xs md:text-[13px] font-normal">
-                <Tooltip message={props.report_help} />
+                <Tooltip message={t(`report-help.${props.ReportName}`)} />
               </span>
             )}
           </div>
@@ -1096,23 +1227,23 @@ const ReportTable = (props) => {
         </div>
         <div
           className={`${
-            isDashboard && props.List?.length > 0 ? "h-[317px]" : "h-full"
-          } w-full`}
+            isDashboard && props.List?.length > 0 ? "min-h-[317px]" : "h-full"
+          } overflow-auto w-full`}
         >
           <table className="op-table border-collapse w-full ">
             <thead className="text-[14px]">
               <tr className="border-y-[1px]">
                 {props.heading?.map((item, index) => (
                   <React.Fragment key={index}>
-                    <th className="px-4 py-2">{item}</th>
+                    <th className="px-4 py-2">{t(`report-heading.${item}`)}</th>
                   </React.Fragment>
                 ))}
                 {props.ReportName === "Templates" && isEnableSubscription && (
-                  <th className="px-4 py-2">Public</th>
+                  <th className="px-4 py-2">{t("public")}</th>
                 )}
                 {props.actions?.length > 0 && (
                   <th className="px-4 py-2 text-transparent pointer-events-none">
-                    Action
+                    {t("action")}
                   </th>
                 )}
               </tr>
@@ -1133,48 +1264,50 @@ const ReportTable = (props) => {
                         </td>
                         <td className="px-4 py-2 ">{item?.Email || "-"}</td>
                         <td className="px-4 py-2">{item?.Phone || "-"}</td>
-                        <td className="px-3 py-2 text-white grid grid-cols-2">
-                          {props.actions?.length > 0 &&
-                            props.actions.map((act, index) => (
-                              <button
-                                key={index}
-                                onClick={() => handleActionBtn(act, item)}
-                                title={act.hoverLabel}
-                                className={`${
-                                  act?.btnColor ? act.btnColor : ""
-                                } op-btn op-btn-sm`}
+                        <td className="px-3 py-2">
+                          <div className="text-base-content min-w-max flex flex-row gap-x-2 gap-y-1 justify-start items-center">
+                            {props.actions?.length > 0 &&
+                              props.actions.map((act, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => handleActionBtn(act, item)}
+                                  title={t(`btnLabel.${act.hoverLabel}`)}
+                                  className={`${
+                                    act?.btnColor ? act.btnColor : ""
+                                  } op-btn op-btn-sm`}
+                                >
+                                  <i className={act.btnIcon}></i>
+                                </button>
+                              ))}
+                            {isDeleteModal[item.objectId] && (
+                              <ModalUi
+                                isOpen
+                                title={"Delete Contact"}
+                                handleClose={handleClose}
                               >
-                                <i className={act.btnIcon}></i>
-                              </button>
-                            ))}
-                          {isDeleteModal[item.objectId] && (
-                            <ModalUi
-                              isOpen
-                              title={"Delete Contact"}
-                              handleClose={handleClose}
-                            >
-                              <div className="m-[20px]">
-                                <div className="text-lg font-normal text-black">
-                                  Are you sure you want to delete this contact?
+                                <div className="m-[20px]">
+                                  <div className="text-lg font-normal text-black">
+                                    {t("contact-delete-alert")}
+                                  </div>
+                                  <hr className="bg-[#ccc] mt-4 " />
+                                  <div className="flex items-center mt-3 gap-2 text-white">
+                                    <button
+                                      onClick={() => handleDelete(item)}
+                                      className="op-btn op-btn-primary"
+                                    >
+                                      {t("yes")}
+                                    </button>
+                                    <button
+                                      onClick={handleClose}
+                                      className="op-btn op-btn-secondary"
+                                    >
+                                      {t("no")}
+                                    </button>
+                                  </div>
                                 </div>
-                                <hr className="bg-[#ccc] mt-4 " />
-                                <div className="flex items-center mt-3 gap-2 text-white">
-                                  <button
-                                    onClick={() => handleDelete(item)}
-                                    className="op-btn op-btn-primary"
-                                  >
-                                    Yes
-                                  </button>
-                                  <button
-                                    onClick={handleClose}
-                                    className="op-btn op-btn-secondary"
-                                  >
-                                    No
-                                  </button>
-                                </div>
-                              </div>
-                            </ModalUi>
-                          )}
+                              </ModalUi>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ) : (
@@ -1203,28 +1336,75 @@ const ReportTable = (props) => {
                         )}
                         {props.heading.includes("Folder") && (
                           <td className="px-4 py-2">
-                            {item?.Folder?.Name || "OpenSign™ Drive"}
+                            {item?.Folder?.Name ||
+                              t("sidebar.OpenSign™ Drive")}
                           </td>
                         )}
                         <td className="px-4 py-2">
                           <button
                             onClick={() => handleDownload(item)}
                             className="op-link op-link-primary"
-                            title={"Download"}
+                            title={t("download")}
                           >
-                            {item?.URL ? "Download" : "-"}
+                            {item?.URL ? t("download") : "-"}
                           </button>
                         </td>
+                        {props.ReportName === "In-progress documents" ? (
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() =>
+                                item?.AuditTrail?.length > 0 &&
+                                setIsModal({ [item?.objectId]: true })
+                              }
+                              className={`${
+                                item?.AuditTrail?.length
+                                  ? "border-green-400"
+                                  : "cursor-default op-border-primary"
+                              } focus:outline-none w-[60px] border-[2px] text-[12px] rounded-full md:self-center`}
+                            >
+                              {item?.AuditTrail?.length ? "VIEWED" : "SENT"}
+                            </button>
+                            {isModal[item.objectId] && (
+                              <ModalUi
+                                isOpen
+                                title={t("document-logs")}
+                                handleClose={() => setIsModal({})}
+                              >
+                                {item?.AuditTrail?.map((x, i) => (
+                                  <div
+                                    key={i}
+                                    className="pl-3 first:mt-2 text-sm font-medium flex flex-col md:flex-row items-start md:gap-4 border-t-[1px] border-gray-600"
+                                  >
+                                    <div className="py-2 break-all font-bold md:text-[12px] md:col-span-2 w-full md:w-[210px]">
+                                      {x?.UserPtr?.Email || "-"}
+                                    </div>
+                                    <button className="px-2 cursor-default border-[2px] text-[12px] border-green-400 rounded-full md:self-center">
+                                      {x?.Activity?.toUpperCase() || "-"}
+                                    </button>
+                                    <div className=" text-[12px] py-2">
+                                      {x?.Activity === "Signed"
+                                        ? new Date(x?.SignedOn)?.toUTCString()
+                                        : new Date(
+                                            x?.ViewedOn
+                                          )?.toUTCString() || "-"}
+                                    </div>
+                                  </div>
+                                ))}
+                              </ModalUi>
+                            )}
+                          </td>
+                        ) : (
+                          <td className="px-4 py-2">
+                            {formatRow(item?.ExtUserPtr)}
+                          </td>
+                        )}
                         <td className="px-4 py-2">
-                          {formatRow(item?.ExtUserPtr)}
-                        </td>
-                        <td className="px-4 py-2">
-                          {item?.Placeholders ? (
+                          {!item?.IsSignyourself && item?.Placeholders ? (
                             <button
                               onClick={() => handleViewSigners(item)}
                               className="op-link op-link-primary"
                             >
-                              View
+                              {t("view")}
                             </button>
                           ) : (
                             "-"
@@ -1234,17 +1414,17 @@ const ReportTable = (props) => {
                           isEnableSubscription && (
                             <td className=" pl-[20px] py-2">
                               {props.ReportName === "Templates" && (
-                                <div className="flex flex-row">
-                                  <label
-                                    className={
-                                      "cursor-pointer relative inline-flex items-center mb-0"
-                                    }
-                                  >
+                                <div
+                                  className="flex flex-row "
+                                  data-tut="IsPublic"
+                                >
+                                  <label className="cursor-pointer relative inline-flex items-center mb-0">
                                     <input
                                       checked={props.isPublic?.[item.objectId]}
-                                      onChange={(e) =>
-                                        handlePublicChange(e, item)
-                                      }
+                                      onChange={(e) => {
+                                        setIsPublicTour();
+                                        handlePublicChange(e, item);
+                                      }}
                                       type="checkbox"
                                       value=""
                                       className="sr-only peer"
@@ -1258,8 +1438,8 @@ const ReportTable = (props) => {
                                   isOpen
                                   title={
                                     props.isPublic[item.objectId]
-                                      ? "Make template public"
-                                      : "Make template private"
+                                      ? t("make-template-public")
+                                      : t("make-template-private")
                                   }
                                   handleClose={() => {
                                     setIsMakePublicModal({});
@@ -1275,13 +1455,13 @@ const ReportTable = (props) => {
                                     <div className="font-normal text-black">
                                       <p className="text-lg">
                                         {props.isPublic[item.objectId]
-                                          ? `Are you sure you want to make this template public?`
-                                          : `Are you sure you want to make this template private? This will remove it from your public profile.`}
+                                          ? t("make-template-public-alert")
+                                          : t("make-template-private-alert")}
                                       </p>
                                       {props.isPublic[item.objectId] && (
                                         <div className="flex mt-2 gap-2 md:items-center">
                                           <p className="text-[15px]">
-                                            Public role :{" "}
+                                            {t("public-role")} :{" "}
                                           </p>
 
                                           <input
@@ -1299,13 +1479,13 @@ const ReportTable = (props) => {
                                         }
                                         className="op-btn op-btn-primary"
                                       >
-                                        Submit
+                                        {t("submit")}
                                       </button>
                                       <button
                                         onClick={() => handleClose(item)}
                                         className="op-btn op-btn-secondary"
                                       >
-                                        Cancel
+                                        {t("cancel")}
                                       </button>
                                     </div>
                                   </div>
@@ -1314,42 +1494,74 @@ const ReportTable = (props) => {
                               {isPublicProfile[item.objectId] && (
                                 <ModalUi
                                   isOpen
-                                  title={"Public URL"}
+                                  title={t("public-url")}
                                   handleClose={() => {
                                     setIsPublicProfile({});
+                                    setIsEmbed(false);
                                   }}
                                 >
                                   <div className="m-[20px]">
-                                    {publicUserName ? (
+                                    {isEmbed && !item?.IsPublic ? (
+                                      <>
+                                        <p>{t("public-template-mssg-6")}</p>
+                                        <EmbedTab templateId={item.objectId} />
+                                      </>
+                                    ) : publicUserName ? (
                                       <div className="font-normal text-black">
-                                        <p>
-                                          Here’s your public URL: Copy it or
-                                          share it with the signer, and you will
-                                          be able to see all your publicly set
-                                          templates.
-                                        </p>
-                                        <div className=" flex items-center gap-3 mt-2  p-[2px] ">
-                                          <span className="font-bold">
-                                            Public URL :
-                                          </span>
-                                          <span
-                                            onClick={() => copytoProfileLink()}
-                                            className="underline underline-offset-2 w-[150px] md:w-[350px] whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer"
-                                          >{`https://opensign.me/${publicUserName}`}</span>
+                                        <span>{t("public-url-copy")}</span>
+                                        <div className=" flex items-center justify-between gap-3 p-[2px] ">
+                                          <div className="w-[280px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                            <span
+                                              onClick={() =>
+                                                copytoProfileLink()
+                                              }
+                                              className="ml-[2px] underline underline-offset-2 cursor-pointer text-blue-800"
+                                            >
+                                              {publicUrl()}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <RWebShare
+                                              data={{
+                                                url: publicUrl(),
+                                                title: "Public url"
+                                              }}
+                                            >
+                                              <button className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm ">
+                                                <i className="fa-light fa-share-from-square"></i>{" "}
+                                                <span className="hidden md:inline-block">
+                                                  {t("btnLabel.Share")}
+                                                </span>
+                                              </button>
+                                            </RWebShare>
+                                            <button
+                                              className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm"
+                                              onClick={() =>
+                                                copytoProfileLink()
+                                              }
+                                            >
+                                              <i className="fa-light fa-copy" />
+                                              <span className="hidden md:inline-block">
+                                                {copied["publicprofile"]
+                                                  ? t("copied")
+                                                  : t("copy")}
+                                              </span>
+                                            </button>
+                                          </div>
                                         </div>
+                                        <p className="text-[13px] mt-[5px]">
+                                          {t("public-url-copy-mssg")}
+                                        </p>
+                                        <EmbedTab templateId={item.objectId} />
                                       </div>
                                     ) : (
                                       <div className="font-normal text-black">
-                                        <p>
-                                          Please add your public URL, and you
-                                          will be able to make a public
-                                          template.
-                                        </p>
+                                        <p>{t("add-public-url-alert")}</p>
                                         <button
                                           className="mt-3 op-btn op-btn-primary"
                                           onClick={() => navigate("/profile")}
                                         >
-                                          Add
+                                          {t("add")}
                                         </button>
                                       </div>
                                     )}
@@ -1359,7 +1571,7 @@ const ReportTable = (props) => {
                             </td>
                           )}
                         <td className="px-2 py-2">
-                          <div className="text-base-content flex flex-row gap-x-2 gap-y-1 justify-start items-center">
+                          <div className="text-base-content min-w-max flex flex-row gap-x-2 gap-y-1 justify-start items-center">
                             {props.actions?.length > 0 &&
                               props.actions.map((act, index) =>
                                 props.ReportName === "Templates" ? (
@@ -1374,7 +1586,7 @@ const ReportTable = (props) => {
                                         onClick={() =>
                                           handleActionBtn(act, item)
                                         }
-                                        title={act.hoverLabel}
+                                        title={t(`btnLabel.${act.hoverLabel}`)}
                                         className={
                                           act.action !== "option"
                                             ? `${
@@ -1388,7 +1600,13 @@ const ReportTable = (props) => {
                                         <i className={act.btnIcon}></i>
                                         {act.btnLabel && (
                                           <span className="uppercase font-medium">
-                                            {act.btnLabel}
+                                            {act.btnLabel.includes(
+                                              "Quick send"
+                                            ) && isEnableSubscription
+                                              ? "Bulk Send"
+                                              : `${t(
+                                                  `btnLabel.${act.btnLabel}`
+                                                )}`}
                                           </span>
                                         )}
                                         {isOption[item.objectId] &&
@@ -1403,7 +1621,9 @@ const ReportTable = (props) => {
                                                       item
                                                     )
                                                   }
-                                                  title={subact.hoverLabel}
+                                                  title={t(
+                                                    `btnLabel.${subact.btnLabel}`
+                                                  )}
                                                 >
                                                   <span>
                                                     <i
@@ -1411,7 +1631,9 @@ const ReportTable = (props) => {
                                                     ></i>
                                                     {subact.btnLabel && (
                                                       <span className="text-[13px] capitalize font-medium">
-                                                        {subact.btnLabel}
+                                                        {t(
+                                                          `btnLabel.${subact.btnLabel}`
+                                                        )}
                                                       </span>
                                                     )}
                                                   </span>
@@ -1428,7 +1650,7 @@ const ReportTable = (props) => {
                                     data-tut={act?.selector}
                                     key={index}
                                     onClick={() => handleActionBtn(act, item)}
-                                    title={act.hoverLabel}
+                                    title={t(`btnLabel.${act.hoverLabel}`)}
                                     className={
                                       act.action !== "option"
                                         ? `${
@@ -1440,7 +1662,7 @@ const ReportTable = (props) => {
                                     <i className={act.btnIcon}></i>
                                     {act.btnLabel && (
                                       <span className="uppercase font-medium">
-                                        {act.btnLabel}
+                                        {t(`btnLabel.${act.btnLabel}`)}
                                       </span>
                                     )}
                                     {isOption[item.objectId] &&
@@ -1452,7 +1674,9 @@ const ReportTable = (props) => {
                                               onClick={() =>
                                                 handleActionBtn(subact, item)
                                               }
-                                              title={subact.hoverLabel}
+                                              title={t(
+                                                `btnLabel.${subact.hoverLabel}`
+                                              )}
                                             >
                                               <span>
                                                 <i
@@ -1460,7 +1684,9 @@ const ReportTable = (props) => {
                                                 ></i>
                                                 {subact.btnLabel && (
                                                   <span className="text-[13px] capitalize font-medium">
-                                                    {subact.btnLabel}
+                                                    {t(
+                                                      `btnLabel.${subact.btnLabel}`
+                                                    )}
                                                   </span>
                                                 )}
                                               </span>
@@ -1475,118 +1701,117 @@ const ReportTable = (props) => {
                           {isShareWith[item.objectId] && (
                             <div className="op-modal op-modal-open">
                               <div className="max-h-90 bg-base-100 w-[95%] md:max-w-[500px] rounded-box relative">
-                                {isSubscribe && isEnableSubscription && (
-                                  <>
-                                    {item?.Signers?.length > 0 ? (
-                                      <div className="h-[150px] flex justify-center items-center mx-2">
-                                        <div
-                                          className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
-                                          onClick={() => setIsShareWith({})}
-                                        >
-                                          ✕
+                                {validplan[isSubscribe.plan] &&
+                                  isEnableSubscription && (
+                                    <>
+                                      {item?.Signers?.length > 0 ? (
+                                        <div className="h-[150px] flex justify-center items-center mx-2">
+                                          <div
+                                            className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
+                                            onClick={() => setIsShareWith({})}
+                                          >
+                                            ✕
+                                          </div>
+                                          <div className="text-base-content text-base text-center">
+                                            {t("share-with-alert")}
+                                          </div>
                                         </div>
-                                        <div className="text-base-content text-base text-center">
-                                          You cannot share a template if any
-                                          roles already have contacts assigned.
-                                          Please remove all contact assignments
-                                          from the roles before sharing the
-                                          template.
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <h3 className="text-base-content font-bold text-lg pt-[15px] px-[20px]">
-                                          Share with
-                                        </h3>
-                                        <div
-                                          className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
-                                          onClick={() => setIsShareWith({})}
-                                        >
-                                          ✕
-                                        </div>
-                                        <form
-                                          className="h-full w-full z-[1300] px-2 mt-3"
-                                          onSubmit={(e) =>
-                                            handleShareWith(e, item)
-                                          }
-                                        >
-                                          <Select
-                                            // onSortEnd={onSortEnd}
-                                            distance={4}
-                                            isMulti
-                                            options={teamList}
-                                            value={selectedTeam}
-                                            onChange={onChange}
-                                            closeMenuOnSelect
-                                            required={true}
-                                            noOptionsMessage={() =>
-                                              "Team not found"
+                                      ) : (
+                                        <>
+                                          <h3 className="text-base-content font-bold text-lg pt-[15px] px-[20px]">
+                                            {t("share-with")}
+                                          </h3>
+                                          <div
+                                            className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
+                                            onClick={() => setIsShareWith({})}
+                                          >
+                                            ✕
+                                          </div>
+                                          <form
+                                            className="h-full w-full z-[1300] px-2 mt-3"
+                                            onSubmit={(e) =>
+                                              handleShareWith(e, item)
                                             }
-                                            unstyled
-                                            classNames={{
-                                              control: () =>
-                                                "op-input op-input-bordered op-input-sm border-gray-400 focus:outline-none hover:border-base-content w-full h-full text-[11px]",
-                                              valueContainer: () =>
-                                                "flex flex-row gap-x-[2px] gap-y-[2px] md:gap-y-0 w-full my-[2px]",
-                                              multiValue: () =>
-                                                "op-badge op-badge-primary h-full text-[11px]",
-                                              multiValueLabel: () => "mb-[2px]",
-                                              menu: () =>
-                                                "mt-1 shadow-md rounded-lg bg-base-200 text-base-content",
-                                              menuList: () =>
-                                                "shadow-md rounded-lg overflow-hidden",
-                                              option: () =>
-                                                "bg-base-200 text-base-content rounded-lg m-1 hover:bg-base-300 p-2",
-                                              noOptionsMessage: () =>
-                                                "p-2 bg-base-200 rounded-lg m-1 p-2"
-                                            }}
-                                          />
-                                          <button className="op-btn op-btn-primary ml-[10px] my-3">
-                                            Submit
-                                          </button>
-                                        </form>
-                                      </>
-                                    )}
-                                  </>
-                                )}
-                                {!isSubscribe && isEnableSubscription && (
-                                  <>
-                                    <div
-                                      className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-primary-content absolute right-2 top-2 z-40"
-                                      onClick={() => setIsShareWith({})}
-                                    >
-                                      ✕
-                                    </div>
-                                    <SubscribeCard
-                                      plan={"TEAMS"}
-                                      price={"20"}
-                                    />
-                                  </>
-                                )}
-                                {isSubscribe && !isEnableSubscription && (
-                                  <>
-                                    <h3 className="text-base-content font-bold text-lg pt-[15px] px-[20px]">
-                                      Share with
-                                    </h3>
-                                    <div
-                                      className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
-                                      onClick={() => setIsShareWith({})}
-                                    >
-                                      ✕
-                                    </div>
-                                    <div className="px-2 mt-3 w-full h-full">
-                                      <div className="op-input op-input-bordered op-input-sm w-full h-full text-[13px] break-all">
-                                        {selectedTeam?.[0]?.label}
+                                          >
+                                            <Select
+                                              // onSortEnd={onSortEnd}
+                                              distance={4}
+                                              isMulti
+                                              options={teamList}
+                                              value={selectedTeam}
+                                              onChange={onChange}
+                                              closeMenuOnSelect
+                                              required={true}
+                                              noOptionsMessage={() =>
+                                                t("team-not-found")
+                                              }
+                                              unstyled
+                                              classNames={{
+                                                control: () =>
+                                                  "op-input op-input-bordered op-input-sm border-gray-400 focus:outline-none hover:border-base-content w-full h-full text-[11px]",
+                                                valueContainer: () =>
+                                                  "flex flex-row gap-x-[2px] gap-y-[2px] md:gap-y-0 w-full my-[2px]",
+                                                multiValue: () =>
+                                                  "op-badge op-badge-primary h-full text-[11px]",
+                                                multiValueLabel: () =>
+                                                  "mb-[2px]",
+                                                menu: () =>
+                                                  "mt-1 shadow-md rounded-lg bg-base-200 text-base-content",
+                                                menuList: () =>
+                                                  "shadow-md rounded-lg overflow-hidden",
+                                                option: () =>
+                                                  "bg-base-200 text-base-content rounded-lg m-1 hover:bg-base-300 p-2",
+                                                noOptionsMessage: () =>
+                                                  "p-2 bg-base-200 rounded-lg m-1 p-2"
+                                              }}
+                                            />
+                                            <button className="op-btn op-btn-primary ml-[10px] my-3">
+                                              {t("submit")}
+                                            </button>
+                                          </form>
+                                        </>
+                                      )}
+                                    </>
+                                  )}
+                                {isEnableSubscription &&
+                                  !validplan[isSubscribe.plan] && (
+                                    <>
+                                      <div
+                                        className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-primary-content absolute right-2 top-2 z-40"
+                                        onClick={() => setIsShareWith({})}
+                                      >
+                                        ✕
                                       </div>
-                                    </div>
-                                    <button
-                                      onClick={(e) => handleShareWith(e, item)}
-                                      className="op-btn op-btn-primary ml-[10px] my-3"
-                                    >
-                                      Submit
-                                    </button>
-                                  </>
-                                )}
+                                      <SubscribeCard plan="TEAMS" />
+                                    </>
+                                  )}
+                                {!isEnableSubscription &&
+                                  validplan[isSubscribe.plan] && (
+                                    <>
+                                      <h3 className="text-base-content font-bold text-lg pt-[15px] px-[20px]">
+                                        {t("share-with")}
+                                      </h3>
+                                      <div
+                                        className="op-btn op-btn-sm op-btn-circle op-btn-ghost text-base-content absolute right-2 top-2 z-40"
+                                        onClick={() => setIsShareWith({})}
+                                      >
+                                        ✕
+                                      </div>
+                                      <div className="px-2 mt-3 w-full h-full">
+                                        <div className="op-input op-input-bordered op-input-sm w-full h-full text-[13px] break-all">
+                                          {selectedTeam?.[0]?.label}
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={(e) =>
+                                          handleShareWith(e, item)
+                                        }
+                                        className="op-btn op-btn-primary ml-[10px] my-3"
+                                      >
+                                        {t("submit")}
+                                      </button>
+                                    </>
+                                  )}
                               </div>
                             </div>
                           )}
@@ -1596,7 +1821,7 @@ const ReportTable = (props) => {
                               showHeader={
                                 props.ReportName === "Templates" && true
                               }
-                              title={"Signers"}
+                              title={t("signers")}
                               reduceWidth={"md:max-w-[450px]"}
                               handleClose={() => setIsViewShare({})}
                             >
@@ -1613,31 +1838,37 @@ const ReportTable = (props) => {
                                   <tr>
                                     {props.ReportName === "Templates" && (
                                       <th className="p-2 pl-3 w-[30%]">
-                                        Roles
+                                        {t("roles")}
                                       </th>
                                     )}
                                     <th className="pl-3 py-2">
                                       {props.ReportName === "Templates"
-                                        ? "Email"
-                                        : "Signers"}
+                                        ? t("email")
+                                        : t("signers")}
                                     </th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {item.Placeholders.map((x, i) => (
-                                    <tr key={i} className="text-sm font-medium">
-                                      {props.ReportName === "Templates" && (
-                                        <td className="text-[12px] p-2 pl-3 w-[30%]">
-                                          {x.Role && x.Role}
-                                        </td>
-                                      )}
-                                      <td className="pl-3 text-[12px] py-2 break-all">
-                                        {x.email
-                                          ? x.email
-                                          : x?.signerPtr?.Email || "-"}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {item.Placeholders.map(
+                                    (x, i) =>
+                                      x.Role !== "prefill" && (
+                                        <tr
+                                          key={i}
+                                          className="text-sm font-medium"
+                                        >
+                                          {props.ReportName === "Templates" && (
+                                            <td className="text-[12px] p-2 pl-3 w-[30%]">
+                                              {x.Role && x.Role}
+                                            </td>
+                                          )}
+                                          <td className="pl-3 text-[12px] py-2 break-all">
+                                            {x.email
+                                              ? x.email
+                                              : x?.signerPtr?.Email || "-"}
+                                          </td>
+                                        </tr>
+                                      )
+                                  )}
                                 </tbody>
                               </table>
                             </ModalUi>
@@ -1645,12 +1876,12 @@ const ReportTable = (props) => {
                           {isDeleteModal[item.objectId] && (
                             <ModalUi
                               isOpen
-                              title={"Delete Document"}
+                              title={t("delete-document")}
                               handleClose={handleClose}
                             >
                               <div className="m-[20px]">
                                 <div className="text-lg font-normal text-black">
-                                  Are you sure you want to delete this document?
+                                  {t("delete-document-alert")}
                                 </div>
                                 <hr className="bg-[#ccc] mt-4" />
                                 <div className="flex items-center mt-3 gap-2 text-white">
@@ -1658,13 +1889,13 @@ const ReportTable = (props) => {
                                     onClick={() => handleDelete(item)}
                                     className="op-btn op-btn-primary"
                                   >
-                                    Yes
+                                    {t("yes")}
                                   </button>
                                   <button
                                     onClick={handleClose}
                                     className="op-btn op-btn-secondary"
                                   >
-                                    No
+                                    {t("no")}
                                   </button>
                                 </div>
                               </div>
@@ -1673,11 +1904,15 @@ const ReportTable = (props) => {
                           {isBulkSend[item.objectId] && (
                             <ModalUi
                               isOpen
-                              title={"Quick send"}
+                              title={
+                                isEnableSubscription
+                                  ? "Bulk send"
+                                  : t("quick-send")
+                              }
                               handleClose={() => setIsBulkSend({})}
                             >
                               {isLoader[item.objectId] ? (
-                                <div className="w-full h-[100px] flex justify-center items-center bg-opacity-30 z-30">
+                                <div className="w-full h-[100px] flex justify-center items-center z-30">
                                   <Loader />
                                 </div>
                               ) : (
@@ -1692,7 +1927,7 @@ const ReportTable = (props) => {
                           {isShare[item.objectId] && (
                             <ModalUi
                               isOpen
-                              title={"Copy link"}
+                              title={t("copy-link")}
                               handleClose={() => {
                                 setIsShare({});
                                 setActLoader({});
@@ -1717,17 +1952,17 @@ const ReportTable = (props) => {
                                       >
                                         <button className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm ">
                                           <i className="fa-light fa-share-from-square"></i>{" "}
-                                          Share
+                                          {t("btnLabel.Share")}
                                         </button>
                                       </RWebShare>
                                       <button
                                         className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm"
                                         onClick={() => copytoclipboard(share)}
                                       >
-                                        <i className="fa-light fa-link"></i>{" "}
+                                        <i className="fa-light fa-copy" />
                                         {copied[share.email]
-                                          ? "Copied"
-                                          : "Copy"}
+                                          ? t("copied")
+                                          : t("copy")}
                                       </button>
                                     </div>
                                   </div>
@@ -1738,12 +1973,12 @@ const ReportTable = (props) => {
                           {isRevoke[item.objectId] && (
                             <ModalUi
                               isOpen
-                              title={"Revoke document"}
+                              title={t("revoke-document")}
                               handleClose={handleClose}
                             >
                               <div className="m-[20px]">
                                 <div className="text-sm md:text-lg font-normal text-black">
-                                  Are you sure you want to revoke this document?
+                                  {t("revoke-document-alert")}
                                 </div>
                                 <div className="mt-2">
                                   <textarea
@@ -1759,13 +1994,13 @@ const ReportTable = (props) => {
                                     onClick={() => handleRevoke(item)}
                                     className="op-btn op-btn-primary px-6"
                                   >
-                                    Yes
+                                    {t("yes")}
                                   </button>
                                   <button
                                     onClick={handleClose}
                                     className="op-btn op-btn-secondary px-6"
                                   >
-                                    No
+                                    {t("no")}
                                   </button>
                                 </div>
                               </div>
@@ -1774,7 +2009,7 @@ const ReportTable = (props) => {
                           {isResendMail[item.objectId] && (
                             <ModalUi
                               isOpen
-                              title={"Resend Mail"}
+                              title={t("resend-mail")}
                               handleClose={() => {
                                 setIsResendMail({});
                                 setIsNextStep({});
@@ -1800,9 +2035,7 @@ const ReportTable = (props) => {
                                           <div className="absolute right-5 text-xs z-40">
                                             <Tooltip
                                               id={`${user.Id}_help`}
-                                              message={
-                                                "You can use following variables which will get replaced with their actual values:- {{document_title}}, {{sender_name}}, {{sender_mail}}, {{sender_phone}}, {{receiver_name}}, {{receiver_email}}, {{receiver_phone}}, {{expiry_date}}, {{company_name}}, {{signing_url}}."
-                                              }
+                                              message={t("resend-mail-help")}
                                             />
                                           </div>
                                           <div>
@@ -1810,7 +2043,7 @@ const ReportTable = (props) => {
                                               className="text-xs ml-1"
                                               htmlFor="mailsubject"
                                             >
-                                              Subject{" "}
+                                              {t("subject")}{" "}
                                             </label>
                                             <input
                                               id="mailsubject"
@@ -1822,6 +2055,14 @@ const ReportTable = (props) => {
                                                   item
                                                 )
                                               }
+                                              onInvalid={(e) =>
+                                                e.target.setCustomValidity(
+                                                  t("input-required")
+                                                )
+                                              }
+                                              onInput={(e) =>
+                                                e.target.setCustomValidity("")
+                                              }
                                               required
                                             />
                                           </div>
@@ -1830,7 +2071,7 @@ const ReportTable = (props) => {
                                               className="text-xs ml-1"
                                               htmlFor="mailbody"
                                             >
-                                              Body{" "}
+                                              {t("body")}{" "}
                                             </label>
                                             <EditorToolbar containerId="toolbar1" />
                                             <ReactQuill
@@ -1849,7 +2090,7 @@ const ReportTable = (props) => {
                                             type="submit"
                                             className="op-btn op-btn-primary"
                                           >
-                                            Resend
+                                            {t("resend")}
                                           </button>
                                         </form>
                                       </div>
@@ -1872,6 +2113,14 @@ const ReportTable = (props) => {
                               </div>
                             </ModalUi>
                           )}
+                          {isDownloadModal[item.objectId] && (
+                            <DownloadPdfZip
+                              setIsDownloadModal={setIsDownloadModal}
+                              isDownloadModal={isDownloadModal[item.objectId]}
+                              pdfDetails={[item]}
+                              isDocId={false}
+                            />
+                          )}
                         </td>
                       </tr>
                     )
@@ -1887,7 +2136,7 @@ const ReportTable = (props) => {
               onClick={() => paginateBack()}
               className="op-join-item op-btn op-btn-sm"
             >
-              Prev
+              {t("prev")}
             </button>
           )}
           {pageNumbers.map((x, i) => (
@@ -1907,7 +2156,7 @@ const ReportTable = (props) => {
               onClick={() => paginateFront()}
               className="op-join-item op-btn op-btn-sm"
             >
-              Next
+              {t("next")}
             </button>
           )}
         </div>
@@ -1924,11 +2173,13 @@ const ReportTable = (props) => {
                 alt="img"
               />
             </div>
-            <div className="text-sm font-semibold">No Data Available</div>
+            <div className="text-sm font-semibold">
+              {t("no-data-avaliable")}
+            </div>
           </div>
         )}
         <ModalUi
-          title={"Add Contact"}
+          title={t("add-contact")}
           isOpen={isContactform}
           handleClose={handleContactFormModal}
         >

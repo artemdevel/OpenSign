@@ -17,7 +17,7 @@ import { exec } from 'child_process';
 import { createTransport } from 'nodemailer';
 import { app as v1 } from './cloud/customRoute/v1/apiV1.js';
 import { PostHog } from 'posthog-node';
-import { smtpenable, smtpsecure, useLocal } from './Utils.js';
+import { appName, cloudServerUrl, smtpenable, smtpsecure, useLocal } from './Utils.js';
 import { SSOAuth } from './auth/authadapter.js';
 let fsAdapter;
 if (useLocal !== 'true') {
@@ -92,17 +92,17 @@ export const config = {
   cloud: function () {
     import('./cloud/main.js');
   },
-  appId: process.env.APP_ID || 'myAppId',
+  appId: process.env.APP_ID || 'opensign',
   logLevel: ['error'],
   maxLimit: 500,
   maxUploadSize: '30mb',
   masterKey: process.env.MASTER_KEY, //Add your master key here. Keep it secret!
   masterKeyIps: ['0.0.0.0/0', '::/0'], // '::1'
-  serverURL: 'http://localhost:8080/app', // Don't forget to change to https if needed
+  serverURL: cloudServerUrl, // Don't forget to change to https if needed
   verifyUserEmails: false,
-  publicServerURL: process.env.SERVER_URL || 'http://localhost:8080/app',
+  publicServerURL: process.env.SERVER_URL || cloudServerUrl,
   // Your apps name. This will appear in the subject and body of the emails that are sent.
-  appName: 'Opensign',
+  appName: appName,
   allowClientClassCreation: false,
   allowExpiredAuthDataToken: false,
   encodeParseObjectInCloudFunction: true,
@@ -112,7 +112,7 @@ export const config = {
           module: 'parse-server-api-mail-adapter',
           options: {
             // The email address from which emails are sent.
-            sender: 'Opensign™' + ' <' + mailsender + '>',
+            sender: appName + ' <' + mailsender + '>',
             // The email templates.
             templates: {
               // The template used by Parse Server to send an email for password
@@ -141,12 +141,7 @@ export const config = {
       }
     : {}),
   filesAdapter: fsAdapter,
-  auth: {
-    google: {
-      enabled: true,
-    },
-    sso: SSOAuth,
-  },
+  auth: { google: { enabled: true }, sso: SSOAuth },
 };
 // Client-keys like the javascript key or the .NET key are not necessary with parse-server
 // If you wish you require them, you can set them as options in the initialization above:
@@ -219,8 +214,8 @@ if (!process.env.TESTING) {
     // console.log('isWindows', isWindows);
 
     const migrate = isWindows
-      ? `set APPLICATION_ID=${process.env.APP_ID}&& set SERVER_URL=http://localhost:8080/app&& set MASTER_KEY=${process.env.MASTER_KEY}&& npx parse-dbtool migrate`
-      : `APPLICATION_ID=${process.env.APP_ID} SERVER_URL=http://localhost:8080/app MASTER_KEY=${process.env.MASTER_KEY} npx parse-dbtool migrate`;
+      ? `set APPLICATION_ID=${process.env.APP_ID}&& set SERVER_URL=${cloudServerUrl}&& set MASTER_KEY=${process.env.MASTER_KEY}&& npx parse-dbtool migrate`
+      : `APPLICATION_ID=${process.env.APP_ID} SERVER_URL=${cloudServerUrl} MASTER_KEY=${process.env.MASTER_KEY} npx parse-dbtool migrate`;
     exec(migrate, (error, stdout, stderr) => {
       if (error) {
         console.error(`Error: ${error.message}`);

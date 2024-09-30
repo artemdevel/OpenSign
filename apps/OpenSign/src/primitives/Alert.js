@@ -1,6 +1,6 @@
 import React from "react";
 
-const Alert = ({ children, type }) => {
+const Alert = ({ children, type, className }) => {
   const textcolor = type ? theme(type) : theme();
   function theme(color) {
     switch (color) {
@@ -18,9 +18,15 @@ const Alert = ({ children, type }) => {
   }
   return (
     children && (
-      <div className="z-[1000] fixed top-20 left-1/2 transform -translate-x-1/2 text-sm">
-        <div className={`op-alert ${textcolor}`}>
-          <span>{children}</span>
+      <div
+        className={`${
+          className
+            ? className
+            : "z-[1000] fixed top-20 left-1/2 transform -translate-x-1/2 text-sm"
+        }  `}
+      >
+        <div className={`op-alert ${textcolor} flex justify-center`}>
+          <span className="px-1">{children}</span>
         </div>
       </div>
     )

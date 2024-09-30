@@ -14,18 +14,23 @@ import "react-datepicker/dist/react-datepicker.css";
 import "../../styles/signature.css";
 import RegexParser from "regex-parser";
 import { emailRegex } from "../../constant/const";
+import { useTranslation } from "react-i18next";
 const textWidgetCls =
   "w-full h-full md:min-w-full md:min-h-full z-[999] text-[12px] rounded-[2px] border-[1px] border-[#007bff] overflow-hidden resize-none outline-none text-base-content item-center whitespace-pre-wrap bg-white";
 const selectWidgetCls =
   "w-full h-full absolute left-0 top-0 border-[1px] border-[#007bff] rounded-[2px] focus:outline-none text-base-content";
 function PlaceholderType(props) {
+  const { t } = useTranslation();
   const type = props?.pos?.type;
+  const widgetTypeTraslation = t(`widgets-name.${props?.pos?.type}`);
   const [selectOption, setSelectOption] = useState("");
   const [validatePlaceholder, setValidatePlaceholder] = useState("");
   const inputRef = useRef(null);
   const [textValue, setTextValue] = useState();
   const [selectedCheckbox, setSelectedCheckbox] = useState([]);
   const years = range(1990, getYear(new Date()) + 16, 1);
+  const fontSize = (props.pos.options?.fontSize || "12") + "px";
+  const fontColor = props.pos.options?.fontColor || "black";
   const months = [
     "January",
     "February",
@@ -140,7 +145,12 @@ function PlaceholderType(props) {
 
   const ExampleCustomInput = forwardRef(({ value, onClick }, ref) => (
     <div
-      className={`${selectWidgetCls} text-[12px] overflow-hidden`}
+      style={{
+        fontSize: fontSize,
+        color: fontColor,
+        fontFamily: "Arial, sans-serif"
+      }}
+      className={`${selectWidgetCls} overflow-hidden`}
       onClick={onClick}
       ref={ref}
     >
@@ -311,7 +321,7 @@ function PlaceholderType(props) {
             props?.handleUserName(
               props?.data?.Id,
               props?.data?.Role,
-              props?.pos?.type
+              widgetTypeTraslation
             )}
         </div>
       );
@@ -329,7 +339,7 @@ function PlaceholderType(props) {
             props?.handleUserName(
               props?.data?.Id,
               props?.data?.Role,
-              props?.pos?.type
+              widgetTypeTraslation
             )}
         </div>
       );
@@ -340,9 +350,13 @@ function PlaceholderType(props) {
             return (
               <div key={ind} className="flex items-center text-center gap-0.5">
                 <input
+                  style={{
+                    width: fontSize,
+                    height: fontSize
+                  }}
                   className={`${
                     ind === 0 ? "mt-0" : "mt-[5px]"
-                  } flex justify-center op-checkbox op-checkbox-xs rounded-[0.350rem]`}
+                  } flex justify-center op-checkbox rounded-[1px] `}
                   onBlur={handleInputBlur}
                   disabled={
                     props.isNeedSign &&
@@ -376,7 +390,15 @@ function PlaceholderType(props) {
                   }}
                 />
                 {!props.pos.options?.isHideLabel && (
-                  <label className="text-xs mb-0 text-center">{data}</label>
+                  <label
+                    style={{
+                      fontSize: fontSize,
+                      color: fontColor
+                    }}
+                    className="text-xs mb-0 text-center"
+                  >
+                    {data}
+                  </label>
                 )}
               </div>
             );
@@ -407,29 +429,29 @@ function PlaceholderType(props) {
           }}
           className={textWidgetCls}
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black"
+            fontSize: fontSize,
+            color: fontColor
           }}
           cols="50"
         />
       ) : (
         <div
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             overflow: "hidden"
           }}
         >
-          <span>{type}</span>
+          <span>{widgetTypeTraslation}</span>
         </div>
       );
     case "dropdown":
       return props.data?.signerObjId === props.signerObjId ? (
         <select
+          style={{
+            fontSize: fontSize,
+            color: fontColor
+          }}
           className={`${selectWidgetCls} text-[12px] bg-inherit`}
           id="myDropdown"
           value={selectOption}
@@ -447,21 +469,44 @@ function PlaceholderType(props) {
           }}
         >
           {/* Default/Title option */}
-          <option value="" disabled hidden>
+          <option
+            style={{
+              fontSize: fontSize,
+              color: fontColor
+            }}
+            value=""
+            disabled
+            hidden
+          >
             {props?.pos?.options?.name}
           </option>
 
           {props.pos?.options?.values?.map((data, ind) => {
             return (
-              <option key={ind} value={data}>
+              <option
+                style={{
+                  fontSize: fontSize,
+                  color: fontColor
+                }}
+                key={ind}
+                value={data}
+              >
                 {data}
               </option>
             );
           })}
         </select>
       ) : (
-        <div className="text-[12px] overflow-hidden">
-          {props.pos?.options?.name ? props.pos.options.name : type}
+        <div
+          style={{
+            fontSize: fontSize,
+            color: fontColor
+          }}
+          className=" overflow-hidden"
+        >
+          {props.pos?.options?.name
+            ? props.pos.options.name
+            : widgetTypeTraslation}
         </div>
       );
     case "initials":
@@ -478,7 +523,7 @@ function PlaceholderType(props) {
             props?.handleUserName(
               props?.data?.Id,
               props?.data?.Role,
-              props?.pos?.type
+              widgetTypeTraslation
             )}
         </div>
       );
@@ -506,25 +551,21 @@ function PlaceholderType(props) {
           }}
           className={textWidgetCls}
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black"
+            fontSize: fontSize,
+            color: fontColor
           }}
           cols="50"
         />
       ) : (
         <div
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             fontFamily: "Arial, sans-serif",
             overflow: "hidden"
           }}
         >
-          <span>{type}</span>
+          <span>{widgetTypeTraslation}</span>
         </div>
       );
     case "company":
@@ -550,25 +591,21 @@ function PlaceholderType(props) {
           }}
           className={textWidgetCls}
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black"
+            fontSize: fontSize,
+            color: fontColor
           }}
           cols="50"
         />
       ) : (
         <div
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             overflow: "hidden",
             fontFamily: "Arial, sans-serif"
           }}
         >
-          <span>{type}</span>
+          <span>{widgetTypeTraslation}</span>
         </div>
       );
     case "job title":
@@ -594,25 +631,21 @@ function PlaceholderType(props) {
           }}
           className={textWidgetCls}
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black"
+            fontSize: fontSize,
+            color: fontColor
           }}
           cols="50"
         />
       ) : (
         <div
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             fontFamily: "Arial, sans-serif",
             overflow: "hidden"
           }}
         >
-          <span>{type}</span>
+          <span>{widgetTypeTraslation}</span>
         </div>
       );
     case "date":
@@ -675,7 +708,14 @@ function PlaceholderType(props) {
           />
         </div>
       ) : (
-        <div className="text-[12px] text-black items-center overflow-hidden">
+        <div
+          style={{
+            fontSize: fontSize,
+            color: fontColor,
+            fontFamily: "Arial, sans-serif"
+          }}
+          className="items-center overflow-hidden"
+        >
           <span>
             {props.selectDate
               ? props.selectDate?.format
@@ -699,7 +739,7 @@ function PlaceholderType(props) {
             props?.handleUserName(
               props?.data?.Id,
               props?.data?.Role,
-              props?.pos?.type
+              widgetTypeTraslation
             )}
         </div>
       );
@@ -727,10 +767,8 @@ function PlaceholderType(props) {
           }}
           className={textWidgetCls}
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             fontFamily: "Arial, sans-serif"
           }}
           cols="50"
@@ -738,15 +776,13 @@ function PlaceholderType(props) {
       ) : (
         <div
           style={{
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black",
+            fontSize: fontSize,
+            color: fontColor,
             fontFamily: "Arial, sans-serif",
             overflow: "hidden"
           }}
         >
-          <span>{type}</span>
+          <span>{widgetTypeTraslation}</span>
         </div>
       );
     case radioButtonWidget:
@@ -756,9 +792,12 @@ function PlaceholderType(props) {
             return (
               <div key={ind} className="flex items-center text-center gap-0.5">
                 <input
-                  className={`${
-                    ind === 0 ? "mt-0" : "mt-[5px]"
-                  } ${"w-[15px] h-[15px]"} flex justify-center op-radio`}
+                  style={{
+                    width: fontSize,
+                    height: fontSize,
+                    marginTop: ind > 0 ? "10px" : "0px"
+                  }}
+                  className={`flex justify-center op-radio`}
                   type="radio"
                   disabled={
                     props.isNeedSign &&
@@ -773,7 +812,15 @@ function PlaceholderType(props) {
                   }}
                 />
                 {!props.pos.options?.isHideLabel && (
-                  <label className="text-xs mb-0">{data}</label>
+                  <label
+                    style={{
+                      fontSize: fontSize,
+                      color: fontColor
+                    }}
+                    className="text-xs mb-0"
+                  >
+                    {data}
+                  </label>
                 )}
               </div>
             );
@@ -803,10 +850,8 @@ function PlaceholderType(props) {
           className={textWidgetCls}
           style={{
             fontFamily: "Arial, sans-serif",
-            fontSize: props.pos.options?.fontSize
-              ? props.pos.options?.fontSize + "px"
-              : "12px",
-            color: props.pos.options?.fontColor || "black"
+            fontSize: fontSize,
+            color: fontColor
           }}
           cols="50"
         />

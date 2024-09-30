@@ -28,7 +28,7 @@ const refreshAccessToken = async refreshToken => {
 
 // Function to create a raw email message
 const makeEmail = async (to, from, subject, html, url, pdfName) => {
-  const protocol = new URL(process.env.SERVER_URL);
+  const publicUrl = new URL(process.env.SERVER_URL);
   const htmlContent = html;
   const boundary = 'boundary_' + Date.now().toString(16);
   let str;
@@ -37,13 +37,15 @@ const makeEmail = async (to, from, subject, html, url, pdfName) => {
     let Pdf = fs.createWriteStream('test.pdf');
     const writeToLocalDisk = () => {
       return new Promise((resolve, reject) => {
-        if (useLocal !== 'true' && protocol.hostname !== 'localhost') {
+        if (useLocal !== 'true') {
           https.get(url, async function (response) {
             response.pipe(Pdf);
             response.on('end', () => resolve('success'));
           });
         } else {
-          http.get(url, async function (response) {
+          const path = new URL(url)?.pathname;
+          const localurl = 'http://localhost:8080' + path;
+          http.get(localurl, async function (response) {
             response.pipe(Pdf);
             response.on('end', () => resolve('success'));
           });
@@ -66,7 +68,11 @@ const makeEmail = async (to, from, subject, html, url, pdfName) => {
           type: 'application/pdf',
           path: './exports/certificate.pdf',
         };
-        attachments = [file, certificate];
+        if (fs.existsSync(certificate.path)) {
+          attachments = [file, certificate];
+        } else {
+          attachments = [file];
+        }
       } catch (err) {
         attachments = [file];
         console.log('Err in read certificate sendmailv3', err);
@@ -140,8 +146,15 @@ export default async function sendMailGmailProvider(_extRes, template) {
           raw: email,
         },
       });
-      //   console.log('response ', response);
-
+      console.log('gmail provider res: ', response?.status);
+      const certificatePath = './exports/certificate.pdf';
+      if (fs.existsSync(certificatePath)) {
+        try {
+          fs.unlinkSync(certificatePath);
+        } catch (err) {
+          console.log('Err in unlink certificate sendmailgmail provider');
+        }
+      }
       return { code: 200, message: 'Email sent successfully' };
     } catch (error) {
       console.error('Error sending email:', error);

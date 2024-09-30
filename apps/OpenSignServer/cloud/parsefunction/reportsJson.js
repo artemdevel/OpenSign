@@ -28,6 +28,7 @@ export default function reportJson(id, userId) {
           'Signers.Email',
           'Signers.Phone',
           'Placeholders',
+          'IsSignyourself',
         ],
       };
 
@@ -64,6 +65,8 @@ export default function reportJson(id, userId) {
           'Folder.Name',
           'URL',
           'ExtUserPtr.Name',
+          'ExtUserPtr.Email',
+          'ExtUserPtr.active_mail_adapter',
           'Signers.Name',
           'Signers.Email',
           'Signers.Phone',
@@ -99,6 +102,8 @@ export default function reportJson(id, userId) {
           'Folder.Name',
           'URL',
           'ExtUserPtr.Name',
+          'ExtUserPtr.Email',
+          'ExtUserPtr.active_mail_adapter',
           'Signers.Name',
           'Signers.Email',
           'Signers.Phone',
@@ -137,6 +142,8 @@ export default function reportJson(id, userId) {
           'Signers.Phone',
           'TimeToCompleteDays',
           'Placeholders',
+          'IsSignyourself',
+          'IsCompleted',
         ],
       };
     //  declined documents report
@@ -225,6 +232,8 @@ export default function reportJson(id, userId) {
           'Folder.Name',
           'URL',
           'ExtUserPtr.Name',
+          'ExtUserPtr.Email',
+          'ExtUserPtr.active_mail_adapter',
           'Signers.Name',
           'Signers.Email',
           'Signers.Phone',
@@ -241,6 +250,7 @@ export default function reportJson(id, userId) {
         reportName: 'Recent signature requests',
         params: {
           Type: { $ne: 'Folder' },
+          SignedUrl: { $ne: null },
           IsCompleted: { $ne: true },
           IsDeclined: { $ne: true },
           IsArchive: { $ne: true },
@@ -265,6 +275,8 @@ export default function reportJson(id, userId) {
           'Name',
           'URL',
           'ExtUserPtr.Name',
+          'ExtUserPtr.Email',
+          'ExtUserPtr.active_mail_adapter',
           'Signers.Name',
           'Signers.UserId',
           'AuditTrail',
@@ -332,6 +344,7 @@ export default function reportJson(id, userId) {
           'Folder.Name',
           'URL',
           'ExtUserPtr.Name',
+          'ExtUserPtr.active_mail_adapter',
           'Signers.Name',
           'Signers.Email',
           'Signers.Phone',

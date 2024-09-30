@@ -3,16 +3,18 @@ import LoaderWithMsg from "../../primitives/LoaderWithMsg";
 import { contractDocument } from "../../constant/Utils";
 import HandleError from "../../primitives/HandleError";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 function useQuery() {
   return new URLSearchParams(useLocation().search);
 }
 function DraftDocument() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const query = useQuery();
   const docId = query.get("docId");
   const [isLoading, setIsLoading] = useState({
     isLoader: true,
-    message: "This might take some time"
+    message: t("loading-mssg")
   });
   useEffect(() => {
     getDocumentDetails();
@@ -52,7 +54,7 @@ function DraftDocument() {
       navigate(`/recipientSignPdf/${data.objectId}`);
     }
     //checking if document has completed and signyour-self flow
-    else if (!signerExist && !isPlaceholder) {
+    else if ((!signerExist && !isPlaceholder) || data?.IsSignyourself) {
       navigate(`/signaturePdf/${data.objectId}`);
     }
     //checking if document has declined by someone

@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import SignatureCanvas from "react-signature-canvas";
-
 function SignPad({
   isSignPad,
   isStamp,
@@ -23,6 +23,7 @@ function SignPad({
   currWidgetsDetails,
   setCurrWidgetsDetails
 }) {
+  const { t } = useTranslation();
   const [penColor, setPenColor] = useState("blue");
   const allColor = ["blue", "red", "black"];
   const canvasRef = useRef(null);
@@ -30,8 +31,8 @@ function SignPad({
   const [isTab, setIsTab] = useState("draw");
   const [isSignImg, setIsSignImg] = useState("");
   const [signValue, setSignValue] = useState("");
-  const [textWidth, setTextWidth] = useState(null);
-  const [textHeight, setTextHeight] = useState(null);
+  const [textWidth, setTextWidth] = useState(0);
+  const [textHeight, setTextHeight] = useState(0);
   const [signatureType, setSignatureType] = useState("draw");
   const fontOptions = [
     { value: "Fasthand" },
@@ -50,7 +51,7 @@ function SignPad({
       `Parse/${localStorage.getItem("parseAppId")}/currentUser`
     );
   const jsonSender = JSON.parse(senderUser);
-  const currentUserName = jsonSender && jsonSender.name;
+  const currentUserName = jsonSender && jsonSender?.name;
 
   //function for clear signature image
   const handleClear = () => {
@@ -82,7 +83,7 @@ function SignPad({
             className="op-btn op-btn-ghost mr-1 mt-[2px]"
             onClick={() => handleClear()}
           >
-            Clear
+            {t("clear")}
           </button>
         )}
         <button
@@ -99,7 +100,12 @@ function SignPad({
               } else {
                 if (isTab === "type") {
                   setIsSignImg("");
-                  onSaveSign(null, false, textWidth, textHeight);
+                  onSaveSign(
+                    null,
+                    false,
+                    !isInitial && textWidth > 150 ? 150 : textWidth,
+                    !isInitial && textHeight > 35 ? 35 : textHeight
+                  );
                 } else {
                   setIsSignImg("");
                   canvasRef.current.clear();
@@ -131,14 +137,14 @@ function SignPad({
             (isTab === "draw" && isSignImg) ||
             (isTab === "image" && image) ||
             (isTab === "mysignature" && isDefaultSign) ||
-            (isTab === "type" && textWidth)
+            (isTab === "type" && signValue)
               ? false
               : image
                 ? false
                 : true
           }
         >
-          Save
+          {t("save")}
         </button>
       </div>
     );
@@ -163,10 +169,10 @@ function SignPad({
       }
     }
 
-    const trimmedName = currentUserName && currentUserName.trim();
+    const trimmedName = currentUserName && currentUserName?.trim();
     const firstCharacter = trimmedName?.charAt(0);
     const userName = isInitial ? firstCharacter : currentUserName;
-    setSignValue(userName);
+    setSignValue(userName || "");
     setFontSelect("Fasthand");
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,8 +200,10 @@ function SignPad({
       canvasRef.current.fromDataURL(isSignImg);
     }
     if (isTab === "type") {
-      const trimmedName = signValue ? signValue.trim() : currentUserName.trim();
-      const firstCharacter = trimmedName.charAt(0);
+      const trimmedName = signValue
+        ? signValue?.trim()
+        : currentUserName?.trim();
+      const firstCharacter = trimmedName?.charAt(0);
       const userName = isInitial ? firstCharacter : signValue;
       setSignValue(userName);
       convertToImg(fontSelect, userName);
@@ -211,11 +219,11 @@ function SignPad({
       : fontSelect
         ? fontSelect
         : "Fasthand";
-
+    const fontSizeValue = "40px";
     //creating span for getting text content width
     const span = document.createElement("span");
     span.textContent = textContent;
-    span.style.font = `20px ${fontfamily}`; // here put your text size and font family
+    span.style.font = `${fontSizeValue} ${fontfamily}`; // here put your text size and font family
     span.style.color = color ? color : penColor;
     span.style.display = "hidden";
     document.body.appendChild(span); // Replace 'container' with the ID of the container element
@@ -225,7 +233,8 @@ function SignPad({
     // Draw the text content on the canvas
     const ctx = canvasElement.getContext("2d");
     const pixelRatio = window.devicePixelRatio || 1;
-    const width = span.offsetWidth;
+    const addExtraWidth = isInitial ? 10 : 50;
+    const width = span.offsetWidth + addExtraWidth;
     const height = span.offsetHeight;
     setTextWidth(width);
     setTextHeight(height);
@@ -301,8 +310,8 @@ function SignPad({
                       <span className="text-base-content font-bold text-lg">
                         {widgetType === "image" ||
                         currWidgetsDetails?.type === "image"
-                          ? "Upload image"
-                          : "Upload stamp image"}
+                          ? t("upload-image")
+                          : t("upload-stamp-image")}
                       </span>
                     ) : (
                       <>
@@ -323,7 +332,7 @@ function SignPad({
                                 : "no-underline"
                             } op-link underline-offset-8 ml-[2px]`}
                           >
-                            Draw
+                            {t("draw")}
                           </span>
                         </div>
                         <div>
@@ -340,7 +349,7 @@ function SignPad({
                                 : "no-underline"
                             } op-link underline-offset-8 ml-[2px]`}
                           >
-                            Upload Image
+                            {t("upload-image")}
                           </span>
                         </div>
                         <div>
@@ -358,7 +367,7 @@ function SignPad({
                                 : "no-underline"
                             } op-link underline-offset-8 ml-[2px]`}
                           >
-                            Type
+                            {t("type")}
                           </span>
                         </div>
                         {!isInitial && defaultSign ? (
@@ -377,7 +386,7 @@ function SignPad({
                                   : "no-underline"
                               } op-link underline-offset-8 ml-[2px]`}
                             >
-                              My Signature
+                              {t("my-signature")}
                             </span>
                           </div>
                         ) : (
@@ -398,7 +407,7 @@ function SignPad({
                                     : "no-underline"
                                 } op-link underline-offset-8 ml-[2px]`}
                               >
-                                My Initials
+                                {t("my-initials")}
                               </span>
                             </div>
                           )
@@ -485,7 +494,7 @@ function SignPad({
                         hidden
                       />
                       <i className="fa-light fa-cloud-upload-alt uploadImgLogo"></i>
-                      <div className="text-[10px]">Upload</div>
+                      <div className="text-[10px]">{t("upload")}</div>
                     </div>
                   </div>
                 ) : (
@@ -522,7 +531,7 @@ function SignPad({
                 <div>
                   <div className="flex justify-between items-center">
                     <span className="mr-[5px] text-[12px]">
-                      {isInitial ? "Initials" : "Signature"}:
+                      {isInitial ? t("initial-teb") : t("signature-tab")}:
                     </span>
                     <input
                       maxLength={isInitial ? 3 : 30}
@@ -587,7 +596,7 @@ function SignPad({
                           borderRadius: "2px"
                         }
                       }}
-                      backgroundColor="rgb(255, 255, 255)"
+                      // backgroundColor="rgb(255, 255, 255)"
                       onEnd={() =>
                         handleSignatureChange(canvasRef.current?.toDataURL())
                       }

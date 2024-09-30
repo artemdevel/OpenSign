@@ -8,9 +8,11 @@ import ModalUi from "../primitives/ModalUi";
 import pad from "../assets/images/pad.svg";
 import AddTeam from "../components/AddTeam";
 import { isEnableSubscription } from "../constant/const";
-import { checkIsSubscribedTeam } from "../constant/Utils";
+import { checkIsSubscribed } from "../constant/Utils";
 import SubscribeCard from "../primitives/SubscribeCard";
 import Title from "../components/Title";
+import { validplan } from "../json/plansArr";
+import { useTranslation } from "react-i18next";
 
 const heading = ["Sr.No", "Name", "Parent Team", "Active"];
 const actions = [
@@ -25,6 +27,7 @@ const actions = [
 ];
 
 const TeamList = () => {
+  const { t } = useTranslation();
   const recordperPage = 10;
   const [teamList, setTeamList] = useState([]);
   const [isLoader, setIsLoader] = useState(false);
@@ -36,7 +39,7 @@ const TeamList = () => {
   const [isActiveModal, setIsActiveModal] = useState({});
   const [isAlert, setIsAlert] = useState({ type: "success", msg: "" });
   const [isActLoader, setIsActLoader] = useState({});
-  const [isSubscribe, setIsSubscribe] = useState(false);
+  const [isSubscribe, setIsSubscribe] = useState({ plan: "", isValid: false });
   const [isEditModal, setIsEditModal] = useState({});
   const [isAdmin, setIsAdmin] = useState(false);
   const startIndex = (currentPage - 1) * recordperPage; // user per page
@@ -95,13 +98,14 @@ const TeamList = () => {
   const pageNumbers = getPaginationRange();
   useEffect(() => {
     fetchTeamList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   async function fetchTeamList() {
     try {
       setIsLoader(true);
       if (isEnableSubscription) {
-        const getIsSubscribe = await checkIsSubscribedTeam();
-        setIsSubscribe(getIsSubscribe);
+        const subscribe = await checkIsSubscribed();
+        setIsSubscribe(subscribe);
       }
       const extUser = JSON.parse(localStorage.getItem("Extand_Class"))?.[0];
       if (extUser) {
@@ -120,7 +124,7 @@ const TeamList = () => {
       }
     } catch (err) {
       console.log("Err in fetch teamlist", err);
-      setIsAlert({ type: "danger", msg: "Something went wrong." });
+      setIsAlert({ type: "danger", msg: t("something-went-wrong-mssg") });
     } finally {
       setTimeout(() => {
         setIsAlert({ type: "success", msg: "" });
@@ -131,7 +135,7 @@ const TeamList = () => {
   const handleFormModal = () => {
     setIsModal(!isModal);
   };
-  // Get current list
+  // to slice out 10 objects from array for current page
   const indexOfLastDoc = currentPage * recordperPage;
   const indexOfFirstDoc = indexOfLastDoc - recordperPage;
   const currentList = teamList?.slice(indexOfFirstDoc, indexOfLastDoc);
@@ -142,8 +146,19 @@ const TeamList = () => {
   };
 
   // Change page
-  const paginateFront = () => setCurrentPage(currentPage + 1);
-  const paginateBack = () => setCurrentPage(currentPage - 1);
+  const paginateFront = () => {
+    const lastValue = pageNumbers?.[pageNumbers?.length - 1];
+    if (currentPage < lastValue) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const paginateBack = () => {
+    if (startIndex > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
   const handleActionBtn = (act, item) => {
     if (act.action === "edit") {
       setIsEditModal({ [item.objectId]: true });
@@ -169,10 +184,10 @@ const TeamList = () => {
         // console.log("teamRes ", teamRes);
         setIsAlert({
           type: !IsActive === false ? "danger" : "success",
-          msg: !IsActive === false ? "Team disabled." : "Team enabled."
+          msg: !IsActive === false ? t("team-disabled") : t("team-enabled")
         });
       } catch (err) {
-        setIsAlert({ type: "danger", msg: "something went wrong." });
+        setIsAlert({ type: "danger", msg: t("something-went-wrong-mssg") });
         console.log("err in disable team", err);
       } finally {
         setIsActLoader({});
@@ -200,10 +215,10 @@ const TeamList = () => {
       const data = { Name: team.Name, TeamId: team.objectId };
       await Parse.Cloud.run("updateteam", data);
       // console.log("updateTeamRes ", updateTeamRes);
-      setIsAlert({ type: "success", msg: "Team Update successfully." });
+      setIsAlert({ type: "success", msg: t("Team-update-successfully") });
     } catch (Err) {
       console.log("Err in update team name"), Err;
-      setIsAlert({ type: "danger", msg: "Something went wrong." });
+      setIsAlert({ type: "danger", msg: t("something-went-wrong-mssg") });
     } finally {
       setIsActLoader({});
       setTimeout(() => setIsAlert({ type: "success", msg: "" }), 1500);
@@ -222,20 +237,16 @@ const TeamList = () => {
           <Loader />
         </div>
       )}
-      {isSubscribe && isEnableSubscription && !isLoader && (
+      {validplan[isSubscribe.plan] && isEnableSubscription && !isLoader && (
         <>
           {isAdmin ? (
             <div className="p-2 w-full bg-base-100 text-base-content op-card shadow-lg">
-              {isAlert.msg && (
-                <Alert type={isAlert.type}>
-                  <div className="ml-3">{isAlert.msg}</div>
-                </Alert>
-              )}
+              {isAlert.msg && <Alert type={isAlert.type}>{isAlert.msg}</Alert>}
               <div className="flex flex-row items-center justify-between my-2 mx-3 text-[20px] md:text-[23px]">
                 <div className="font-light">
-                  Teams{" "}
+                  {t("report-name.Teams")}
                   <span className="text-xs md:text-[13px] font-normal">
-                    <Tooltip message={"Teams"} />
+                    <Tooltip message={t("report-heading.Team")} />
                   </span>
                 </div>
                 <div
@@ -251,7 +262,9 @@ const TeamList = () => {
                     <tr className="border-y-[1px]">
                       {heading?.map((item, index) => (
                         <React.Fragment key={index}>
-                          <th className="px-4 py-2">{item}</th>
+                          <th className="px-4 py-2">
+                            {t(`report-heading.${item}`)}
+                          </th>
                         </React.Fragment>
                       ))}
                     </tr>
@@ -286,16 +299,16 @@ const TeamList = () => {
                                   {isActiveModal[item.objectId] && (
                                     <ModalUi
                                       isOpen
-                                      title={"Team status"}
+                                      title={t("Team status")}
                                       handleClose={handleClose}
                                     >
                                       <div className="m-[20px]">
                                         <div className="text-lg font-normal text-black">
-                                          Are you sure you want to{" "}
+                                          {t("are-you-sure")}{" "}
                                           {item?.IsActive
-                                            ? "disable"
-                                            : "enable"}{" "}
-                                          this team?
+                                            ? t("disable")
+                                            : t("enable")}{" "}
+                                          {t("this-team")}
                                         </div>
                                         <hr className="bg-[#ccc] mt-4 " />
                                         <div className="flex items-center mt-3 gap-2 text-white">
@@ -305,13 +318,13 @@ const TeamList = () => {
                                             }
                                             className="op-btn op-btn-primary"
                                           >
-                                            Yes
+                                            {t("yes")}
                                           </button>
                                           <button
                                             onClick={handleClose}
                                             className="op-btn op-btn-secondary"
                                           >
-                                            No
+                                            {t("no")}
                                           </button>
                                         </div>
                                       </div>
@@ -341,7 +354,7 @@ const TeamList = () => {
                                   {isEditModal[item.objectId] && (
                                     <ModalUi
                                       isOpen
-                                      title={"Edit Team"}
+                                      title={t("edit-team")}
                                       handleClose={handleClose}
                                     >
                                       <form
@@ -351,7 +364,7 @@ const TeamList = () => {
                                         }
                                       >
                                         <label className="text-xs font-semibold text-base-content ml-1">
-                                          Name of Team{" "}
+                                          {t("name-of-team")}{" "}
                                           <span className="text-[red] text-[13px]">
                                             *
                                           </span>
@@ -362,13 +375,21 @@ const TeamList = () => {
                                           onChange={(e) =>
                                             handleEditChange(e, item)
                                           }
+                                          onInvalid={(e) =>
+                                            e.target.setCustomValidity(
+                                              t("input-required")
+                                            )
+                                          }
+                                          onInput={(e) =>
+                                            e.target.setCustomValidity("")
+                                          }
                                           required
                                         />
                                         <button
                                           type="submit"
                                           className="op-btn op-btn-primary mt-3"
                                         >
-                                          Save
+                                          {t("save")}
                                         </button>
                                       </form>
                                     </ModalUi>
@@ -389,7 +410,7 @@ const TeamList = () => {
                     onClick={() => paginateBack()}
                     className="op-join-item op-btn op-btn-sm"
                   >
-                    Prev
+                    {t("prev")}
                   </button>
                 )}
                 {pageNumbers.map((x, i) => (
@@ -409,7 +430,7 @@ const TeamList = () => {
                     onClick={() => paginateFront()}
                     className="op-join-item op-btn op-btn-sm"
                   >
-                    Next
+                    {t("next")}
                   </button>
                 )}
               </div>
@@ -426,11 +447,13 @@ const TeamList = () => {
                       alt="img"
                     />
                   </div>
-                  <div className="text-sm font-semibold">No Data Available</div>
+                  <div className="text-sm font-semibold">
+                    {t("no-data-avaliable")}
+                  </div>
                 </div>
               )}
               <ModalUi
-                title={"Add Team"}
+                title={t("add-team")}
                 isOpen={isModal}
                 handleClose={handleFormModal}
               >
@@ -447,15 +470,17 @@ const TeamList = () => {
                 <h1 className="text-[60px] lg:text-[120px] font-semibold">
                   404
                 </h1>
-                <p className="text-[30px] lg:text-[50px]">Page Not Found</p>
+                <p className="text-[30px] lg:text-[50px]">
+                  {t("page-not-found")}
+                </p>
               </div>
             </div>
           )}
         </>
       )}
-      {!isSubscribe && isEnableSubscription && !isLoader && (
+      {isEnableSubscription && !validplan[isSubscribe.plan] && !isLoader && (
         <div data-tut="apisubscribe">
-          <SubscribeCard plan={"TEAMS"} price={"20"} />
+          <SubscribeCard plan="TEAMS" />
         </div>
       )}
     </div>

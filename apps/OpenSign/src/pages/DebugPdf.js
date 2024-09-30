@@ -74,7 +74,7 @@ const DebugPdf = () => {
 
   const inferPdfType = async (pdf) => {
     try {
-      const firstPage = await pdf.getPage(2);
+      const firstPage = await pdf.getPage(pdf?.numPages > 1 ? 2 : 1);
       const scale = 1;
       const { width, height } = firstPage.getViewport({ scale });
       setPdfDimension({ width: width, height: height });
@@ -215,11 +215,7 @@ const DebugPdf = () => {
   };
   return (
     <div>
-      {copied && (
-        <Alert type="success">
-          <span className="ml-3">Copied</span>
-        </Alert>
-      )}
+      {copied && <Alert type="success">Copied</Alert>}
       <Title title={"Debug Pdf"} />
       {width < 800 ? (
         <HandleError handleError={"Debug PDF only availble for PC"} />

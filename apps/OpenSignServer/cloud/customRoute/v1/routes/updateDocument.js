@@ -10,7 +10,7 @@ export default async function updateDocument(request, response) {
     const token = await tokenQuery.first({ useMasterKey: true });
     if (token !== undefined) {
       // Valid Token then proceed request
-      const allowedKeys = ['name', 'note', 'description', 'folderId'];
+      const allowedKeys = ['name', 'note', 'description', 'folderId', 'enableOTP'];
       const objectKeys = Object.keys(request.body);
       const isValid = objectKeys.every(key => allowedKeys.includes(key)) && objectKeys.length > 0;
       const parseUser = JSON.parse(JSON.stringify(token));
@@ -48,6 +48,10 @@ export default async function updateDocument(request, response) {
                 objectId: request?.body?.folderId,
               });
             }
+            if (request.body?.enableOTP !== undefined) {
+              updateQuery.set('IsEnableOTP', request.body?.enableOTP);
+            }
+
             const updatedRes = await updateQuery.save(null, { useMasterKey: true });
             if (updatedRes) {
               if (request.posthog) {

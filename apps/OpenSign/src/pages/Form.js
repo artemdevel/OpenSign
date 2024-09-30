@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { formJson } from "../json/FormJson";
-import AddUser from "../components/AddUser";
-import sanitizeFileName from "../primitives/sanitizeFileName";
 import Parse from "parse";
 import DropboxChooser from "../components/shared/fields/DropboxChoose";
 import Alert from "../primitives/Alert";
@@ -11,7 +9,12 @@ import SignersInput from "../components/shared/fields/SignersInput";
 import Title from "../components/Title";
 import PageNotFound from "./PageNotFound";
 import { SaveFileSize } from "../constant/saveFileSize";
-import { checkIsSubscribed, getFileName, toDataUrl } from "../constant/Utils";
+import {
+  checkIsSubscribed,
+  generateTitleFromFilename,
+  getFileName,
+  toDataUrl
+} from "../constant/Utils";
 import { PDFDocument } from "pdf-lib";
 import axios from "axios";
 import { isEnableSubscription } from "../constant/const";
@@ -19,24 +22,35 @@ import ModalUi from "../primitives/ModalUi";
 import { Tooltip } from "react-tooltip";
 import Upgrade from "../primitives/Upgrade";
 import Loader from "../primitives/Loader";
+import { useTranslation } from "react-i18next";
+
+// `generatePdfName` is used to generate file name
+function generatePdfName(length) {
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const charactersLength = characters.length;
+
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * charactersLength));
+  }
+  return result;
+}
 
 // `Form` render all type of Form on this basis of their provided in path
 function Form() {
   const { id } = useParams();
 
-  if (id === "lM0xRnM3iE") {
-    return <AddUser />;
+  const config = formJson[id];
+  if (config) {
+    return <Forms {...config} />;
   } else {
-    const config = formJson[id];
-    if (config) {
-      return <Forms {...config} />;
-    } else {
-      return <PageNotFound prefix={"Form"} />;
-    }
+    return <PageNotFound prefix={"Form"} />;
   }
 }
 
 const Forms = (props) => {
+  const { t } = useTranslation();
   const maxFileSize = 20;
   const abortController = new AbortController();
   const inputFileRef = useRef(null);
@@ -52,7 +66,8 @@ const Forms = (props) => {
     password: "",
     file: "",
     remindOnceInEvery: 5,
-    autoreminder: false
+    autoreminder: false,
+    IsEnableOTP: "false"
   });
   const [fileupload, setFileUpload] = useState("");
   const [fileload, setfileload] = useState(false);
@@ -65,6 +80,7 @@ const Forms = (props) => {
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [isCorrectPass, setIsCorrectPass] = useState(true);
   const [isSubscribe, setIsSubscribe] = useState(false);
+  const [isAdvanceOpt, setIsAdvanceOpt] = useState(false);
   const handleStrInput = (e) => {
     setIsCorrectPass(true);
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -81,8 +97,8 @@ const Forms = (props) => {
   }, []);
   const fetchSubscription = async () => {
     if (isEnableSubscription) {
-      const getIsSubscribe = await checkIsSubscribed();
-      setIsSubscribe(getIsSubscribe);
+      const subscribe = await checkIsSubscribed();
+      setIsSubscribe(subscribe.isValid);
     }
   };
 
@@ -109,9 +125,7 @@ const Forms = (props) => {
       if (typeof files[0] !== "undefined") {
         const mb = Math.round(files[0].size / Math.pow(1024, 2));
         if (mb > maxFileSize) {
-          alert(
-            `The selected file size is too large. Please select a file less than ${maxFileSize} MB`
-          );
+          alert(`${t("file-alert-1")} ${maxFileSize} MB`);
           setFileUpload("");
           e.target.value = "";
           return;
@@ -130,13 +144,11 @@ const Forms = (props) => {
                 } catch (err) {
                   console.log("err in sending posthog encryptedpdf", err);
                 }
-                // console.log("err ", err);
                 try {
                   setIsDecrypting(true);
-                  const fileName = files?.[0].name;
                   const size = files?.[0].size;
-                  const name = sanitizeFileName(fileName);
-                  const url = "https://ai.nxglabs.in/decryptpdf"; //"https://ai.nxglabs.in/decryptpdf"; //
+                  const name = generatePdfName(16);
+                  const url = "https://ai.nxglabs.in/decryptpdf"; //
                   let formData = new FormData();
                   formData.append("file", files[0]);
                   formData.append("password", "");
@@ -179,6 +191,9 @@ const Forms = (props) => {
                   if (parseFile.url()) {
                     setFileUpload(parseFile.url());
                     setfileload(false);
+                    const title = generateTitleFromFilename(files?.[0]?.name);
+                    setFormData((obj) => ({ ...obj, Name: title }));
+                    SaveFileSize(size, response.url(), tenantId);
                     const tenantId = localStorage.getItem("TenantId");
                     SaveFileSize(size, parseFile.url(), tenantId);
                     return parseFile.url();
@@ -226,9 +241,8 @@ const Forms = (props) => {
                 useObjectStreams: false
               });
               setfileload(true);
-              const fileName = files[0].name;
               const size = files[0].size;
-              const name = sanitizeFileName(fileName);
+              const name = generatePdfName(16);
               const pdfName = `${name?.split(".")[0]}.pdf`;
               const parseFile = new Parse.File(
                 pdfName,
@@ -253,6 +267,8 @@ const Forms = (props) => {
                 setfileload(false);
                 if (response.url()) {
                   const tenantId = localStorage.getItem("TenantId");
+                  const title = generateTitleFromFilename(files?.[0]?.name);
+                  setFormData((obj) => ({ ...obj, Name: title }));
                   SaveFileSize(size, response.url(), tenantId);
                   return response.url();
                 }
@@ -280,19 +296,24 @@ const Forms = (props) => {
                   if (res.data) {
                     setFileUpload(res.data.url);
                     setfileload(false);
+                    const title = generateTitleFromFilename(files?.[0]?.name);
+                    setFormData((obj) => ({ ...obj, Name: title }));
                   }
                 } catch (err) {
                   e.target.value = "";
                   setfileload(false);
                   setpercentage(0);
                   console.log("err in libreconverter ", err);
+                  alert(
+                    "We are currently experiencing some issues with processing DOCX files. Please upload the PDF version or contact us on support@opensignlabs.com"
+                  );
                 }
               }
             }
           }
         }
       } else {
-        alert("Please select file.");
+        alert(t("file-alert-2"));
         return false;
       }
     } catch (error) {
@@ -303,9 +324,8 @@ const Forms = (props) => {
 
   const handleFileUpload = async (file) => {
     setfileload(true);
-    const fileName = file.name;
     const size = file.size;
-    const name = sanitizeFileName(fileName);
+    const name = generatePdfName(16);
     const pdfFile = file;
     const parseFile = new Parse.File(name, pdfFile);
 
@@ -325,6 +345,8 @@ const Forms = (props) => {
       setfileload(false);
       if (response.url()) {
         const tenantId = localStorage.getItem("TenantId");
+        const title = generateTitleFromFilename(file.name);
+        setFormData((obj) => ({ ...obj, Name: title }));
         SaveFileSize(size, response.url(), tenantId);
         return response.url();
       }
@@ -344,14 +366,11 @@ const Forms = (props) => {
 
     if (mb > maxFileSize) {
       setTimeout(() => {
-        alert(
-          `The selected file size is too large. Please select a file less than ${maxFileSize} MB`
-        );
+        alert(`${t("file-alert-1")}${maxFileSize} MB`);
       }, 500);
       return;
     } else {
-      const name = sanitizeFileName(file.name);
-
+      const name = generatePdfName(16);
       const parseFile = new Parse.File(name, { uri: url });
 
       try {
@@ -365,9 +384,10 @@ const Forms = (props) => {
         });
         setFileUpload(response.url());
         setfileload(false);
-
         if (response.url()) {
           const tenantId = localStorage.getItem("TenantId");
+          const title = generateTitleFromFilename(file.name);
+          setFormData((obj) => ({ ...obj, Name: title }));
           SaveFileSize(size, response.url(), tenantId);
           return response.url();
         }
@@ -401,6 +421,13 @@ const Forms = (props) => {
           object.set("SendinOrder", isChecked);
           object.set("AutomaticReminders", formData.autoreminder);
           object.set("RemindOnceInEvery", parseInt(formData.remindOnceInEvery));
+          if (isEnableSubscription) {
+            const IsEnableOTP =
+              formData?.IsEnableOTP === "false" ? false : true;
+            object.set("IsEnableOTP", IsEnableOTP);
+          } else {
+            object.set("IsEnableOTP", false);
+          }
         }
         object.set("URL", fileupload);
         object.set("CreatedBy", Parse.User.createWithoutData(currentUser.id));
@@ -427,7 +454,17 @@ const Forms = (props) => {
           setFormData({
             Name: "",
             Description: "",
-            Note: ""
+            Note:
+              props.title === "Sign Yourself"
+                ? "Note to myself"
+                : "Please review and sign this document",
+            TimeToCompleteDays: 15,
+            SendinOrder: "true",
+            password: "",
+            file: "",
+            remindOnceInEvery: 5,
+            autoreminder: false,
+            IsEnableOTP: "false"
           });
           setFileUpload("");
           setpercentage(0);
@@ -438,13 +475,11 @@ const Forms = (props) => {
         setIsErr(true);
       } finally {
         setIsAlert(true);
-        setTimeout(() => {
-          setIsAlert(false);
-        }, 1000);
+        setTimeout(() => setIsAlert(false), 1000);
         setIsSubmit(false);
       }
     } else {
-      alert("Please wait while the document is being uploaded.");
+      alert(t("file-alert-3"));
     }
   };
 
@@ -478,7 +513,8 @@ const Forms = (props) => {
       password: "",
       file: "",
       remindOnceInEvery: 5,
-      autoreminder: false
+      autoreminder: false,
+      IsEnableOTP: "false"
     });
     setFileUpload("");
     setpercentage(0);
@@ -492,9 +528,8 @@ const Forms = (props) => {
     setIsPassword(false);
     setfileload(true);
     try {
-      const fileName = formData?.file?.name;
       const size = formData?.file?.size;
-      const name = sanitizeFileName(fileName);
+      const name = generatePdfName(16);
       const url = "https://ai.nxglabs.in/decryptpdf"; //
       let Data = new FormData();
       Data.append("file", formData?.file);
@@ -531,6 +566,8 @@ const Forms = (props) => {
         setFormData((prev) => ({ ...prev, password: "" }));
         setFileUpload(parseFile.url());
         setfileload(false);
+        const title = generateTitleFromFilename(formData?.file?.name);
+        setFormData((obj) => ({ ...obj, Name: title }));
         const tenantId = localStorage.getItem("TenantId");
         SaveFileSize(size, parseFile.url(), tenantId);
         return parseFile.url();
@@ -569,7 +606,7 @@ const Forms = (props) => {
       {isAlert && (
         <Alert type={isErr ? "danger" : "success"}>
           {isErr
-            ? "Something went wrong please try again!"
+            ? t("something-went-wrong-mssg")
             : `${props.msgVar} created successfully!`}
         </Alert>
       )}
@@ -582,12 +619,12 @@ const Forms = (props) => {
           <ModalUi
             isOpen={isPassword}
             handleClose={() => handeCloseModal()}
-            title={"Enter Pdf Password"}
+            title={t("enter-pdf-password")}
           >
             <form onSubmit={handlePasswordSubmit}>
               <div className="px-6 pt-3 pb-2">
                 <label className="mb-2 text-xs text-base-content">
-                  Password
+                  {t("password")}
                 </label>
                 <input
                   type="text"
@@ -596,6 +633,10 @@ const Forms = (props) => {
                   onChange={(e) => handleStrInput(e)}
                   className="w-full op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content text-xs"
                   placeholder="Enter pdf password"
+                  onInvalid={(e) =>
+                    e.target.setCustomValidity(t("input-required"))
+                  }
+                  onInput={(e) => e.target.setCustomValidity("")}
                   required
                 />
                 <p
@@ -605,18 +646,20 @@ const Forms = (props) => {
                       : "text-transparent pointer-events-none"
                   } ml-2 text-[11px] `}
                 >
-                  Please provide correct password
+                  {t("correct-password")}
                 </p>
               </div>
               <div className="px-6 mb-3">
                 <button type="submit" className="op-btn op-btn-primary">
-                  Submit
+                  {t("submit")}
                 </button>
               </div>
             </form>
           </ModalUi>
           <form onSubmit={handleSubmit}>
-            <h1 className="text-[20px] font-semibold mb-4">{props?.title}</h1>
+            <h1 className="text-[20px] font-semibold mb-4">
+              {t(`form-name.${props?.title}`)}
+            </h1>
             {fileload && (
               <div className="flex items-center gap-x-2">
                 <div className="h-2 rounded-full w-[200px] md:w-[400px] bg-gray-200">
@@ -631,22 +674,22 @@ const Forms = (props) => {
             {isDecrypting && (
               <div className="flex items-center gap-x-2">
                 <span className="text-base-content text-sm">
-                  Decrypting pdf please wait...
+                  {t("decrypting-pdf")}
                 </span>
               </div>
             )}
             <div className="text-xs">
               <label className="block">
-                {`File (pdf, png, jpg, jpeg${
+                {`${t("report-heading.File")} (${t("file-type")}${
                   isEnableSubscription ? ", docx)" : ")"
                 }`}
                 <span className="text-red-500 text-[13px]">*</span>
               </label>
               {fileupload.length > 0 ? (
-                <div className="flex gap-2 justify-center items-center">
+                <div className="flex gap-1 justify-center items-center">
                   <div className="flex justify-between items-center op-input op-input-bordered op-input-sm w-full h-full text-[13px]">
-                    <div className="break-all">
-                      file selected: {getFileName(fileupload)}
+                    <div className="break-all cursor-default">
+                      {t("file-selected")}: {getFileName(fileupload)}
                     </div>
                     <div
                       onClick={() => setFileUpload("")}
@@ -663,7 +706,7 @@ const Forms = (props) => {
                   )}
                 </div>
               ) : (
-                <div className="flex gap-2 justify-center items-center ">
+                <div className="flex gap-1 justify-center items-center">
                   <input
                     type="file"
                     className="op-file-input op-file-input-bordered op-file-input-sm focus:outline-none hover:border-base-content w-full text-xs"
@@ -674,6 +717,10 @@ const Forms = (props) => {
                         ? "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
                         : "application/pdf,image/png,image/jpeg"
                     }
+                    onInvalid={(e) =>
+                      e.target.setCustomValidity(t("input-required"))
+                    }
+                    onInput={(e) => e.target.setCustomValidity("")}
                     required
                   />
                   {process.env.REACT_APP_DROPBOX_API_KEY && (
@@ -688,8 +735,8 @@ const Forms = (props) => {
             <div className="text-xs mt-2">
               <label className="block">
                 {props.title === "New Template"
-                  ? "Template Title"
-                  : "Document Title"}
+                  ? t("template-title")
+                  : t("document-title")}
                 <span className="text-red-500 text-[13px]">*</span>
               </label>
               <input
@@ -697,12 +744,16 @@ const Forms = (props) => {
                 className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
                 value={formData.Name}
                 onChange={(e) => handleStrInput(e)}
+                onInvalid={(e) =>
+                  e.target.setCustomValidity(t("input-required"))
+                }
+                onInput={(e) => e.target.setCustomValidity("")}
                 required
               />
             </div>
             {props.title === "New Template" && (
               <div className="text-xs mt-2">
-                <label className="block">Description</label>
+                <label className="block">{t("description")}</label>
                 <input
                   name="Description"
                   className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
@@ -720,13 +771,18 @@ const Forms = (props) => {
             )}
             <div className="text-xs mt-2">
               <label className="block">
-                Note<span className="text-red-500 text-[13px]">*</span>
+                {t("report-heading.Note")}
+                <span className="text-red-500 text-[13px]">*</span>
               </label>
               <input
                 name="Note"
                 className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
                 value={formData.Note}
                 onChange={(e) => handleStrInput(e)}
+                onInvalid={(e) =>
+                  e.target.setCustomValidity(t("input-required"))
+                }
+                onInput={(e) => e.target.setCustomValidity("")}
                 required
               />
             </div>
@@ -737,143 +793,211 @@ const Forms = (props) => {
                 isReset={isReset}
               />
             )}
-            {props.title === "Request Signatures" && (
+            {props.title !== "Sign Yourself" && (
               <div className="text-xs mt-2">
                 <label className="block">
-                  Time To Complete (Days)
-                  <span className="text-red-500 text-[13px]">*</span>
+                  {t("send-in-order")}
+                  <a data-tooltip-id="sendInOrder-tooltip" className="ml-1">
+                    <sup>
+                      <i className="fa-light fa-question rounded-full border-[#33bbff] text-[#33bbff] text-[13px] border-[1px] py-[1.5px] px-[4px]"></i>
+                    </sup>
+                  </a>
+                  <Tooltip id="sendInOrder-tooltip" className="z-50">
+                    <div className="max-w-[200px] md:max-w-[450px]">
+                      <p className="font-bold">{t("send-in-order")}</p>
+                      <p>{t("send-in-order-help.p1")}</p>
+                      <p className="p-[5px]">
+                        <ol className="list-disc">
+                          <li>
+                            <span className="font-bold">{t("yes")}: </span>
+                            <span>{t("send-in-order-help.p2")}</span>
+                          </li>
+                          <li>
+                            <span className="font-bold">{t("no")}: </span>
+                            <span>{t("send-in-order-help.p3")}</span>
+                          </li>
+                        </ol>
+                      </p>
+                      <p>{t("send-in-order-help.p4")}</p>
+                    </div>
+                  </Tooltip>
                 </label>
-                <input
-                  type="number"
-                  name="TimeToCompleteDays"
-                  className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
-                  value={formData.TimeToCompleteDays}
-                  onChange={(e) => handleStrInput(e)}
-                  required
-                />
+                <div className="flex items-center gap-2 ml-2 mb-1">
+                  <input
+                    type="radio"
+                    value={"true"}
+                    className="op-radio op-radio-xs"
+                    name="SendinOrder"
+                    checked={formData.SendinOrder === "true"}
+                    onChange={handleStrInput}
+                  />
+                  <div className="text-center">{t("yes")}</div>
+                </div>
+                <div className="flex items-center gap-2 ml-2 mb-1">
+                  <input
+                    type="radio"
+                    value={"false"}
+                    name="SendinOrder"
+                    className="op-radio op-radio-xs"
+                    checked={formData.SendinOrder === "false"}
+                    onChange={handleStrInput}
+                  />
+                  <div className="text-center">{t("no")}</div>
+                </div>
               </div>
             )}
-            {props.title !== "Sign Yourself" && (
-              <>
-                <div className="text-xs mt-2">
-                  <label className="block">
-                    Send In Order
-                    <a data-tooltip-id="sendInOrder-tooltip" className="ml-1">
-                      <sup>
-                        <i className="fa-light fa-question rounded-full border-[#33bbff] text-[#33bbff] text-[13px] border-[1px] py-[1.5px] px-[4px]"></i>
-                      </sup>
-                    </a>
-                    <Tooltip id="sendInOrder-tooltip" className="z-50">
-                      <div className="max-w-[200px] md:max-w-[450px]">
-                        <p className="font-bold">Send in Order</p>
-                        <p>
-                          Choose how you want the signing requests to be sent to
-                          the document signers:
-                        </p>
-                        <p className="p-[5px]">
-                          <ol className="list-disc">
-                            <li>
-                              <span className="font-bold">Yes:</span>
-                              <span>
-                                Selecting this option will send the signing
-                                request to the first signer initially. Once the
-                                first signer completes their part, the next
-                                signer in the sequence will receive the request.
-                                This process continues until all signers have
-                                signed the document. This method ensures that
-                                the document is signed in a specific order.
-                              </span>
-                            </li>
-                            <li>
-                              <span className="font-bold">No: </span>
-                              <span>
-                                Selecting this option will send the signing
-                                links to all signers simultaneously. Every
-                                signer can sign the document at their
-                                convenience, regardless of whether other signers
-                                have completed their signatures. This method is
-                                faster but does not enforce any signing order
-                                among the participants.
-                              </span>
-                            </li>
-                          </ol>
-                        </p>
-
-                        <p>
-                          Select the option that best suits the needs of your
-                          document processing.
-                        </p>
-                      </div>
-                    </Tooltip>
-                  </label>
-                  <div className="flex items-center gap-2 ml-2 mb-1">
-                    <input
-                      type="radio"
-                      value={"true"}
-                      className="op-radio op-radio-xs"
-                      name="SendinOrder"
-                      checked={formData.SendinOrder === "true"}
-                      onChange={handleStrInput}
-                    />
-                    <div className="text-center">Yes</div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-2 mb-1">
-                    <input
-                      type="radio"
-                      value={"false"}
-                      name="SendinOrder"
-                      className="op-radio op-radio-xs"
-                      checked={formData.SendinOrder === "false"}
-                      onChange={handleStrInput}
-                    />
-                    <div className="text-center">No</div>
-                  </div>
-                </div>
-                {isEnableSubscription && (
-                  <div className="text-xs mt-2">
-                    <span
-                      className={
-                        isSubscribe
-                          ? "font-semibold"
-                          : "font-semibold text-gray-300"
-                      }
-                    >
-                      Auto reminder{"  "}
-                      {!isSubscribe && isEnableSubscription && <Upgrade />}
-                    </span>
-                    <label
-                      className={`${
-                        isSubscribe
-                          ? "cursor-pointer "
-                          : "pointer-events-none opacity-50"
-                      } relative block items-center mb-0`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="op-toggle transition-all checked:[--tglbg:#3368ff] checked:bg-white"
-                        checked={formData.autoreminder}
-                        onChange={handleAutoReminder}
-                      />
-                    </label>
-                  </div>
-                )}
-                {formData?.autoreminder === true && (
+            {isAdvanceOpt && (
+              <div className="overflow-y-auto z-[500] transition-all">
+                {props.title === "Request Signatures" && (
                   <div className="text-xs mt-2">
                     <label className="block">
-                      Remind once in every (Days)
+                      {t("time-to-complete")}
                       <span className="text-red-500 text-[13px]">*</span>
                     </label>
                     <input
                       type="number"
-                      value={formData.remindOnceInEvery}
-                      name="remindOnceInEvery"
+                      name="TimeToCompleteDays"
                       className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
-                      onChange={handleStrInput}
+                      value={formData.TimeToCompleteDays}
+                      onChange={(e) => handleStrInput(e)}
+                      onInvalid={(e) =>
+                        e.target.setCustomValidity(t("input-required"))
+                      }
+                      onInput={(e) => e.target.setCustomValidity("")}
                       required
                     />
                   </div>
                 )}
-              </>
+                {props.title !== "Sign Yourself" && (
+                  <>
+                    {isEnableSubscription && (
+                      <div className="text-xs mt-2">
+                        <span className={isSubscribe ? "" : " text-gray-300"}>
+                          {t("auto-reminder")}{" "}
+                          {!isSubscribe && isEnableSubscription && <Upgrade />}
+                        </span>
+                        <label
+                          className={`${
+                            isSubscribe
+                              ? "cursor-pointer "
+                              : "pointer-events-none opacity-50"
+                          } relative block items-center mb-0 mt-1.5`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="op-toggle transition-all checked:[--tglbg:#3368ff] checked:bg-white"
+                            checked={formData.autoreminder}
+                            onChange={handleAutoReminder}
+                          />
+                        </label>
+                      </div>
+                    )}
+                    {formData?.autoreminder === true && (
+                      <div className="text-xs mt-2">
+                        <label className="block">
+                          {t("remind-once")}
+                          <span className="text-red-500 text-[13px]">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.remindOnceInEvery}
+                          name="remindOnceInEvery"
+                          className="op-input op-input-bordered op-input-sm focus:outline-none hover:border-base-content w-full text-xs"
+                          onChange={handleStrInput}
+                          onInvalid={(e) =>
+                            e.target.setCustomValidity(t("input-required"))
+                          }
+                          onInput={(e) => e.target.setCustomValidity("")}
+                          required
+                        />
+                      </div>
+                    )}
+                    {isEnableSubscription && (
+                      <div className="text-xs mt-2">
+                        <label className="block">
+                          <span className={isSubscribe ? "" : " text-gray-300"}>
+                            {t("isenable-otp")}{" "}
+                            <a
+                              data-tooltip-id="isenableotp-tooltip"
+                              className="ml-1"
+                            >
+                              <sup>
+                                <i className="fa-light fa-question rounded-full border-[#33bbff] text-[#33bbff] text-[13px] border-[1px] py-[1.5px] px-[4px]"></i>
+                              </sup>
+                            </a>{" "}
+                            {!isSubscribe && isEnableSubscription && (
+                              <Upgrade />
+                            )}
+                          </span>
+                          <Tooltip id="isenableotp-tooltip" className="z-50">
+                            <div className="max-w-[200px] md:max-w-[450px]">
+                              <p className="font-bold">{t("isenable-otp")}</p>
+                              <p>{t("isenable-otp-help.p1")}</p>
+                              <p className="p-[5px]">
+                                <ol className="list-disc">
+                                  <li>
+                                    <span className="font-bold">
+                                      {t("yes")}:{" "}
+                                    </span>
+                                    <span>{t("isenable-otp-help.p2")}</span>
+                                  </li>
+                                  <li>
+                                    <span className="font-bold">
+                                      {t("no")}:{" "}
+                                    </span>
+                                    <span>{t("isenable-otp-help.p3")}</span>
+                                  </li>
+                                </ol>
+                              </p>
+                              <p>{t("isenable-otp-help.p4")}</p>
+                            </div>
+                          </Tooltip>
+                        </label>
+                        <div
+                          className={`${
+                            isSubscribe ? "" : "pointer-events-none opacity-50"
+                          } flex items-center gap-2 ml-2 mb-1 `}
+                        >
+                          <input
+                            type="radio"
+                            value={"true"}
+                            className="op-radio op-radio-xs"
+                            name="IsEnableOTP"
+                            checked={formData.IsEnableOTP === "true"}
+                            onChange={handleStrInput}
+                          />
+                          <div className="text-center">{t("yes")}</div>
+                        </div>
+                        <div
+                          className={`${
+                            isSubscribe ? "" : "pointer-events-none opacity-50"
+                          } flex items-center gap-2 ml-2 mb-1 `}
+                        >
+                          <input
+                            type="radio"
+                            value={"false"}
+                            name="IsEnableOTP"
+                            className="op-radio op-radio-xs"
+                            checked={formData.IsEnableOTP === "false"}
+                            onChange={handleStrInput}
+                          />
+                          <div className="text-center">{t("no")}</div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {props.title !== "Sign Yourself" && (
+              <div
+                onClick={() => setIsAdvanceOpt(!isAdvanceOpt)}
+                className={`mt-2.5 op-link op-link-primary text-sm`}
+              >
+                {isAdvanceOpt
+                  ? t("hide-advanced-options")
+                  : t("advanced-options")}
+              </div>
             )}
             <div className="flex items-center mt-3 gap-2">
               <button
@@ -883,13 +1007,13 @@ const Forms = (props) => {
                 type="submit"
                 disabled={isSubmit}
               >
-                Next
+                {t("next")}
               </button>
               <div
                 className="op-btn op-btn-ghost"
                 onClick={() => handleCancel()}
               >
-                Cancel
+                {t("cancel")}
               </div>
             </div>
           </form>

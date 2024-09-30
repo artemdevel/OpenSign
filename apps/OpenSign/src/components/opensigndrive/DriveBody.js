@@ -2,14 +2,16 @@ import React, { useState, useEffect, useRef } from "react";
 import "../../styles/opensigndrive.css";
 import axios from "axios";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 import Table from "react-bootstrap/Table";
 import * as HoverCard from "@radix-ui/react-hover-card";
 import ModalUi from "../../primitives/ModalUi";
 import FolderModal from "../shared/fields/FolderModal";
+import { useTranslation } from "react-i18next";
+import { handleDownloadPdf } from "../../constant/Utils";
 
 function DriveBody(props) {
+  const { t } = useTranslation();
   const [rename, setRename] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const inputRef = useRef(null);
@@ -42,7 +44,7 @@ function DriveBody(props) {
     props.setFolderName((prev) => [...prev, folderData]);
     props.setIsLoading({
       isLoad: true,
-      message: "This might take some time"
+      message: t("loading-mssg")
     });
     props.setDocId(data.objectId);
     props.setPdfData([]);
@@ -90,7 +92,7 @@ function DriveBody(props) {
           console.log("Err ", err);
           props.setIsAlert({
             isShow: true,
-            alertMessage: "something went wrong"
+            alertMessage: t("something-went-wrong-mssg")
           });
         });
     }
@@ -98,16 +100,17 @@ function DriveBody(props) {
 
   //function for navigate user to microapp-signature component
   const checkPdfStatus = async (data) => {
-    const signerExist = data.Signers && data.Signers;
-    const isDecline = data.IsDeclined && data.IsDeclined;
-    const isPlaceholder = data.Placeholders && data.Placeholders;
-    const signedUrl = data.SignedUrl;
+    const signerExist = data?.Signers;
+    const isDecline = data?.IsDeclined;
+    const isPlaceholder = data?.Placeholders;
+    const signedUrl = data?.SignedUrl;
+    const isSignYourself = data?.IsSignyourself;
     //checking if document has completed and request signature flow
     if (data?.IsCompleted && signerExist?.length > 0) {
       navigate(`/recipientSignPdf/${data.objectId}`);
     }
     //checking if document has completed and signyour-self flow
-    else if (!signerExist && !isPlaceholder) {
+    else if ((!signerExist && !isPlaceholder) || isSignYourself) {
       navigate(`/signaturePdf/${data.objectId}`);
     }
     //checking if document has declined by someone
@@ -134,12 +137,10 @@ function DriveBody(props) {
     }
   };
 
-  const handleMenuItemClick = (selectType, data) => {
+  const handleMenuItemClick = async (selectType, data) => {
     switch (selectType) {
       case "Download": {
-        const pdfName = data && data.Name;
-        const pdfUrl = data && data.SignedUrl ? data.SignedUrl : data.URL;
-        saveAs(pdfUrl, `${sanitizeFileName(pdfName)}_signed_by_OpenSign™.pdf`);
+        await handleDownloadPdf([data]);
         break;
       }
       case "Rename": {
@@ -191,7 +192,7 @@ function DriveBody(props) {
         console.log("Err ", err);
         props.setIsAlert({
           isShow: true,
-          alertMessage: "something went wrong"
+          alertMessage: t("something-went-wrong-mssg")
         });
       });
   };
@@ -258,16 +259,10 @@ function DriveBody(props) {
 
       setIsOpenMoveModal(false);
     } else {
-      alert("folder already exist!");
+      alert(t("folder-already-exist!"));
       setIsOpenMoveModal(false);
     }
   };
-
-  const sanitizeFileName = (pdfName) => {
-    // Replace spaces with underscore
-    return pdfName.replace(/ /g, "_");
-  };
-
   const handleEnterPress = (e, data) => {
     if (e.key === "Enter") {
       handledRenameDoc(data);
@@ -348,14 +343,14 @@ function DriveBody(props) {
           </td>
           <td>{createddate}</td>
           <td>Pdf</td>
-          <td>{status}</td>
+          <td>{t(`drive-document-status.${status}`)}</td>
           <td>
             <i
               onClick={(e) => {
                 e.stopPropagation();
                 handleMenuItemClick("Download", data);
               }}
-              className="fa-light fa-download mr-[8px] op-text-primary"
+              className="fa-light fa-download mr-[8px] op-text-primary cursor-pointer"
               aria-hidden="true"
             ></i>
           </td>
@@ -368,7 +363,11 @@ function DriveBody(props) {
             {/* folder */}
             <div
               data-tut={props.dataTutSeventh}
-              onClick={() => handleOnclikFolder(data)}
+              onClick={() => {
+                if (!rename) {
+                  handleOnclikFolder(data);
+                }
+              }}
               className="cursor-pointer"
             >
               <svg
@@ -381,7 +380,6 @@ function DriveBody(props) {
               {rename === data.objectId ? (
                 <input
                   onFocus={() => {
-                    inputRef.current.setSelectionRange(0, 0);
                     const input = inputRef.current;
                     if (input) {
                       input.select();
@@ -393,9 +391,8 @@ function DriveBody(props) {
                   onKeyDown={(e) => handleEnterPress(e, data)}
                   ref={inputRef}
                   defaultValue={renameValue}
-                  // value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
-                  className="w-[100px] border-[1.5px] border-black rounded-sm text-[10px]"
+                  className="op-input op-input-bordered op-input-xs w-[100px] focus:outline-none hover:border-base-content text-[10px]"
                 />
               ) : (
                 <span className="fileName">{data.Name}</span>
@@ -421,7 +418,11 @@ function DriveBody(props) {
         </ContextMenu.Root>
       </div>
     ) : (
-      <HoverCard.Root openDelay={0} closeDelay={100}>
+      <HoverCard.Root
+        open={rename ? false : undefined}
+        openDelay={0}
+        closeDelay={100}
+      >
         <HoverCard.Trigger asChild>
           <div>
             <ContextMenu.Root>
@@ -430,7 +431,11 @@ function DriveBody(props) {
                   {/* pdf */}
                   <div
                     data-tut={props.dataTutSixth}
-                    onClick={() => checkPdfStatus(data)}
+                    onClick={() => {
+                      if (!rename) {
+                        checkPdfStatus(data);
+                      }
+                    }}
                     className="cursor-pointer"
                   >
                     <svg
@@ -445,7 +450,6 @@ function DriveBody(props) {
                         autoFocus={true}
                         type="text"
                         onFocus={() => {
-                          inputRef.current.setSelectionRange(0, 0);
                           const input = inputRef.current;
                           if (input) {
                             input.select();
@@ -455,9 +459,8 @@ function DriveBody(props) {
                         onKeyDown={(e) => handleEnterPress(e, data)}
                         ref={inputRef}
                         defaultValue={renameValue}
-                        // value={renameValue}
                         onChange={(e) => setRenameValue(e.target.value)}
-                        className="w-[100px] border-[1.5px] border-black rounded-sm text-[10px]"
+                        className="op-input op-input-bordered op-input-xs w-[100px] focus:outline-none hover:border-base-content text-[10px]"
                       />
                     ) : (
                       <span className="fileName">{data.Name}</span>
@@ -503,7 +506,9 @@ function DriveBody(props) {
                         className="ContextMenuItem"
                       >
                         <i className={menu.icon}></i>
-                        <span className="ml-[8px]">{menu.type}</span>
+                        <span className="ml-[8px]">
+                          {t(`context-menu.${menu.type}`)}
+                        </span>
                       </ContextMenu.Item>
                     );
                   })}
@@ -514,18 +519,28 @@ function DriveBody(props) {
         </HoverCard.Trigger>
         <HoverCard.Portal>
           <HoverCard.Content className="HoverCardContent" sideOffset={5}>
-            <strong className="text-[13px]">Title: </strong>
+            <strong className="text-[13px]">
+              {t("report-heading.Title")}:{" "}
+            </strong>
             <span className="text-[12px] font-medium mb-0"> {data.Name}</span>
             <br />
-            <strong className="text-[13px]">Status: </strong>
-            <span className="text-[12px] font-medium"> {status}</span>
+            <strong className="text-[13px]">
+              {t("report-heading.Status")}:{" "}
+            </strong>
+            <span className="text-[12px] font-medium">
+              {t(`drive-document-status.${status}`)}
+            </span>
             <br />
-            <strong className="text-[13px]">Created Date: </strong>
+            <strong className="text-[13px]">
+              {t("report-heading.created-date")}:{" "}
+            </strong>
             <span className="text-[12px] font-medium">{createddate}</span>
             <br />
             {signerExist && (
               <>
-                <strong className="text-[13px]">Signers: </strong>
+                <strong className="text-[13px]">
+                  {t("report-heading.Signers")}:{" "}
+                </strong>
                 {signersName()}
               </>
             )}
@@ -545,11 +560,11 @@ function DriveBody(props) {
           <Table striped bordered hover>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Created Date</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Action</th>
+                <th>{t("report-heading.Name")}</th>
+                <th>{t("report-heading.created-date")}</th>
+                <th>{t("report-heading.Type")}</th>
+                <th>{t("report-heading.Status")}</th>
+                <th>{t("action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -582,25 +597,25 @@ function DriveBody(props) {
       )}
       <ModalUi
         isOpen={isDeleteDoc}
-        title={"Delete Document"}
+        title={t("delete-document")}
         handleClose={() => setIsDeleteDoc(false)}
       >
         <div className="h-full p-[20px] text-base-content">
-          <p>Are you sure you want to delete this document?</p>
+          <p>{t("delete-document-alert")}</p>
           <div className="h-[1px] w-full bg-[#9f9f9f] my-[15px]"></div>
           <button
             onClick={() => handleDeleteDocument(selectDoc)}
             type="button"
             className="op-btn op-btn-primary mr-2"
           >
-            Yes
+            {t("yes")}
           </button>
           <button
             onClick={() => setIsDeleteDoc(false)}
             type="button"
             className="op-btn op-btn-neutral"
           >
-            No
+            {t("no")}
           </button>
         </div>
       </ModalUi>
