@@ -29,7 +29,11 @@ import {
   onClickZoomOut,
   onClickZoomIn,
   handleRemoveWidgets,
-  handleRotateWarning
+  handleRotateWarning,
+  color,
+  signatureTypes,
+  getTenantDetails,
+  handleSignatureType
 } from "../constant/Utils";
 import RenderPdf from "../components/pdf/RenderPdf";
 import "../styles/AddUser.css";
@@ -68,10 +72,7 @@ const TemplatePlaceholder = () => {
   const [isSendAlert, setIsSendAlert] = useState(false);
   const [isCreateDocModal, setIsCreateDocModal] = useState(false);
   const [isSubscribe, setIsSubscribe] = useState(false);
-  const [isRotate, setIsRotate] = useState({
-    status: false,
-    degree: 0
-  });
+  const [isRotate, setIsRotate] = useState({ status: false, degree: 0 });
   const [isLoading, setIsLoading] = useState({
     isLoad: true,
     message: t("loading-mssg")
@@ -102,50 +103,21 @@ const TemplatePlaceholder = () => {
   const [isTextSetting, setIsTextSetting] = useState(false);
   const [pdfLoad, setPdfLoad] = useState(false);
   const [pdfRotateBase64, setPdfRotatese64] = useState("");
-  const color = [
-    "#93a3db",
-    "#e6c3db",
-    "#c0e3bc",
-    "#bce3db",
-    "#b8ccdb",
-    "#ceb8db",
-    "#ffccff",
-    "#99ffcc",
-    "#cc99ff",
-    "#ffcc99",
-    "#66ccff",
-    "#ffffcc"
-  ];
   const isMobile = window.innerWidth < 767;
   const [, drop] = useDrop({
     accept: "BOX",
     drop: (item, monitor) => addPositionOfSignature(item, monitor),
-    collect: (monitor) => ({
-      isOver: !!monitor.isOver()
-    })
+    collect: (monitor) => ({ isOver: !!monitor.isOver() })
   });
   const [{ isDragSign }, dragSignature] = useDrag({
     type: "BOX",
-    item: {
-      type: "BOX",
-      id: 1,
-      text: "signature"
-    },
-    collect: (monitor) => ({
-      isDragSign: !!monitor.isDragging()
-    })
+    item: { type: "BOX", id: 1, text: "signature" },
+    collect: (monitor) => ({ isDragSign: !!monitor.isDragging() })
   });
   const [{ isDragStamp }, dragStamp] = useDrag({
     type: "BOX",
-
-    item: {
-      type: "BOX",
-      id: 2,
-      text: "stamp"
-    },
-    collect: (monitor) => ({
-      isDragStamp: !!monitor.isDragging()
-    })
+    item: { type: "BOX", id: 2, text: "stamp" },
+    collect: (monitor) => ({ isDragStamp: !!monitor.isDragging() })
   });
   const [uniqueId, setUniqueId] = useState("");
   const [isModalRole, setIsModalRole] = useState(false);
@@ -166,6 +138,7 @@ const TemplatePlaceholder = () => {
   const [fontColor, setFontColor] = useState();
   const [zoomPercent, setZoomPercent] = useState(0);
   const [scale, setScale] = useState(1);
+  const [signatureType, setSignatureType] = useState([]);
 
   useEffect(() => {
     fetchTemplate();
@@ -213,9 +186,38 @@ const TemplatePlaceholder = () => {
       handleNavigation(plan);
     }
   }
+
+  //function to fetch tenant Details
+  const fetchTenantDetails = async () => {
+    const user = JSON.parse(
+      localStorage.getItem(
+        `Parse/${localStorage.getItem("parseAppId")}/currentUser`
+      )
+    );
+    if (user) {
+      try {
+        const tenantDetails = await getTenantDetails(user?.objectId);
+        if (tenantDetails && tenantDetails === "user does not exist!") {
+          alert(t("user-not-exist"));
+        } else if (tenantDetails) {
+          const signatureType = tenantDetails?.SignatureType || [];
+          const filterSignTypes = signatureType?.filter(
+            (x) => x.enabled === true
+          );
+          return filterSignTypes;
+        }
+      } catch (e) {
+        alert(t("user-not-exist"));
+      }
+    } else {
+      alert(t("user-not-exist"));
+    }
+  };
+
   // `fetchTemplate` function in used to get Template from server and setPlaceholder ,setSigner if present
   const fetchTemplate = async () => {
     try {
+      const tenantSignTypes = await fetchTenantDetails();
       const params = { templateId: templateId };
       const templateDeatils = await axios.post(
         `${localStorage.getItem("baseUrl")}functions/getTemplate`,
@@ -237,7 +239,18 @@ const TemplatePlaceholder = () => {
         if (isEnableSubscription) {
           checkIsSubscribed(documentData[0]?.ExtUserPtr?.Email);
         }
-        setPdfDetails(documentData);
+        const userSignatureType =
+          documentData[0]?.ExtUserPtr?.SignatureType || signatureTypes;
+        const docSignTypes =
+          documentData?.[0]?.SignatureType || userSignatureType;
+        const updatedSignatureType = await handleSignatureType(
+          tenantSignTypes,
+          docSignTypes
+        );
+        setSignatureType(updatedSignatureType);
+        const updatedPdfDetails = [...documentData];
+        updatedPdfDetails[0].SignatureType = updatedSignatureType;
+        setPdfDetails(updatedPdfDetails);
         setIsSigners(true);
         if (documentData[0].Signers && documentData[0].Signers.length > 0) {
           setIsSelectId(0);
@@ -260,11 +273,7 @@ const TemplatePlaceholder = () => {
                   blockColor: x.blockColor
                 };
               } else {
-                return {
-                  Role: x.Role,
-                  Id: x.Id,
-                  blockColor: x.blockColor
-                };
+                return { Role: x.Role, Id: x.Id, blockColor: x.blockColor };
               }
             });
             setSignersData(updatedSigners);
@@ -287,11 +296,7 @@ const TemplatePlaceholder = () => {
             documentData[0].Placeholders.length > 0
           ) {
             let updatedSigners = documentData[0].Placeholders.map((x) => {
-              return {
-                Role: x.Role,
-                Id: x.Id,
-                blockColor: x.blockColor
-              };
+              return { Role: x.Role, Id: x.Id, blockColor: x.blockColor };
             });
             setSignerPos(documentData[0].Placeholders);
             setUniqueId(updatedSigners[0].Id);
@@ -304,17 +309,33 @@ const TemplatePlaceholder = () => {
         documentData === "Error: Something went wrong!" ||
         (documentData.result && documentData.result.error)
       ) {
-        const loadObj = {
-          isLoad: false
-        };
         setHandleError(t("something-went-wrong-mssg"));
-        setIsLoading(loadObj);
+        setIsLoading({ isLoad: false });
       } else {
         setHandleError(t("no-data-avaliable"));
-        const loadObj = {
-          isLoad: false
-        };
-        setIsLoading(loadObj);
+        setIsLoading({ isLoad: false });
+      }
+      const res = await contractUsers();
+      if (res[0] && res.length) {
+        setSignerUserId(res[0].objectId);
+        setCurrentEmail(res[0].Email);
+        const tourstatus = res[0].TourStatus && res[0].TourStatus;
+        if (tourstatus && tourstatus.length > 0) {
+          setTourStatus(tourstatus);
+          const checkTourRecipients = tourstatus.filter(
+            (data) => data.templateTour
+          );
+          if (checkTourRecipients && checkTourRecipients.length > 0) {
+            setCheckTourStatus(checkTourRecipients[0].templateTour);
+          }
+        }
+        setIsLoading({ isLoad: false });
+      } else if (res === "Error: Something went wrong!") {
+        setHandleError(t("something-went-wrong-mssg"));
+        setIsLoading({ isLoad: false });
+      } else if (res.length === 0) {
+        setHandleError(t("no-data-avaliable"));
+        setIsLoading({ isLoad: false });
       }
     } catch (err) {
       console.log("err ", err);
@@ -323,37 +344,6 @@ const TemplatePlaceholder = () => {
       } else {
         setHandleError(t("something-went-wrong-mssg"));
       }
-    }
-    const res = await contractUsers();
-    if (res[0] && res.length) {
-      setSignerUserId(res[0].objectId);
-      setCurrentEmail(res[0].Email);
-      const tourstatus = res[0].TourStatus && res[0].TourStatus;
-      if (tourstatus && tourstatus.length > 0) {
-        setTourStatus(tourstatus);
-        const checkTourRecipients = tourstatus.filter(
-          (data) => data.templateTour
-        );
-        if (checkTourRecipients && checkTourRecipients.length > 0) {
-          setCheckTourStatus(checkTourRecipients[0].templateTour);
-        }
-      }
-      const loadObj = {
-        isLoad: false
-      };
-      setIsLoading(loadObj);
-    } else if (res === "Error: Something went wrong!") {
-      const loadObj = {
-        isLoad: false
-      };
-      setHandleError(t("something-went-wrong-mssg"));
-      setIsLoading(loadObj);
-    } else if (res.length === 0) {
-      setHandleError(t("no-data-avaliable"));
-      const loadObj = {
-        isLoad: false
-      };
-      setIsLoading(loadObj);
     }
   };
 
@@ -379,8 +369,10 @@ const TemplatePlaceholder = () => {
         );
         const key = randomId();
         const dragTypeValue = item?.text ? item.text : monitor.type;
-        const widgetWidth = defaultWidthHeight(dragTypeValue).width;
-        const widgetHeight = defaultWidthHeight(dragTypeValue).height;
+        const widgetWidth =
+          defaultWidthHeight(dragTypeValue).width * containerScale;
+        const widgetHeight =
+          defaultWidthHeight(dragTypeValue).height * containerScale;
         let dropData = [],
           currentPagePosition;
         let placeHolder;
@@ -402,10 +394,7 @@ const TemplatePlaceholder = () => {
             Height: widgetHeight / (containerScale * scale)
           };
           dropData.push(dropObj);
-          placeHolder = {
-            pageNumber: pageNumber,
-            pos: dropData
-          };
+          placeHolder = { pageNumber: pageNumber, pos: dropData };
         } else {
           const offset = monitor.getClientOffset();
           //adding and updating drop position in array when user drop signature button in div
@@ -436,10 +425,7 @@ const TemplatePlaceholder = () => {
           };
 
           dropData.push(dropObj);
-          placeHolder = {
-            pageNumber: pageNumber,
-            pos: dropData
-          };
+          placeHolder = { pageNumber: pageNumber, pos: dropData };
         }
         let filterSignerPos = signerPos.find((data) => data.Id === uniqueId);
         const getPlaceHolder = filterSignerPos?.placeHolder;
@@ -456,10 +442,7 @@ const TemplatePlaceholder = () => {
           );
           const getPos = currentPagePosition?.pos;
           const newSignPos = getPos.concat(dropData);
-          let xyPos = {
-            pageNumber: pageNumber,
-            pos: newSignPos
-          };
+          let xyPos = { pageNumber: pageNumber, pos: newSignPos };
           updatePlace.push(xyPos);
           const updatesignerPos = signerPos.map((x) =>
             x.Id === uniqueId ? { ...x, placeHolder: updatePlace } : x
@@ -495,7 +478,6 @@ const TemplatePlaceholder = () => {
         setWidgetType(dragTypeValue);
         setSignKey(key);
         setSelectWidgetId(key);
-
         setIsMailSend(false);
       } else {
         setIsReceipent(false);
@@ -508,7 +490,7 @@ const TemplatePlaceholder = () => {
   const tourAddRole = [
     {
       selector: '[data-tut="reactourAddbtn"]',
-      content: "You need to add a role before you can add fields for it. ",
+      content: t("add-user-template"),
       position: "top",
       style: { fontSize: "13px" }
     }
@@ -594,9 +576,7 @@ const TemplatePlaceholder = () => {
       }
     }
     setIsMailSend(false);
-    setTimeout(() => {
-      setIsDragging(false);
-    }, 200);
+    setTimeout(() => setIsDragging(false), 200);
   };
   //function for delete signature block
   const handleDeleteSign = (key, Id) => {
@@ -712,7 +692,7 @@ const TemplatePlaceholder = () => {
     }, 2000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signerPos]);
+  }, [signerPos, signatureType]);
 
   // `autosavedetails` is used to save template details after every 2 sec when changes are happern in placeholder like drag-drop widgets, remove signers
   const autosavedetails = async () => {
@@ -734,6 +714,7 @@ const TemplatePlaceholder = () => {
       templateCls.id = templateId;
       templateCls.set("Placeholders", signerPos);
       templateCls.set("Signers", signers);
+      templateCls.set("SignatureType", signatureType);
       await templateCls.save();
     } catch (err) {
       console.log("error in autosave template", err);
@@ -742,8 +723,7 @@ const TemplatePlaceholder = () => {
 
   const handleSaveTemplate = async () => {
     if (signersdata?.length) {
-      const loadObj = { isLoad: true, message: t("loading-mssg") };
-      setIsLoading(loadObj);
+      setIsLoading({ isLoad: true, message: t("loading-mssg") });
       setIsSendAlert(false);
       let signers = [];
       if (signersdata?.length > 0) {
@@ -781,7 +761,9 @@ const TemplatePlaceholder = () => {
           RemindOnceInEvery: parseInt(pdfDetails[0]?.RemindOnceInEvery),
           NextReminderDate: pdfDetails[0]?.NextReminderDate,
           IsEnableOTP: pdfDetails[0]?.IsEnableOTP === true ? true : false,
-          URL: pdfUrl
+          IsTourEnabled: pdfDetails[0]?.IsTourEnabled === true ? true : false,
+          URL: pdfUrl,
+          SignatureType: signatureType
         };
         const updateTemplate = new Parse.Object("contracts_Template");
         updateTemplate.id = templateId;
@@ -890,9 +872,7 @@ const TemplatePlaceholder = () => {
           `${localStorage.getItem(
             "baseUrl"
           )}classes/contracts_Users/${signerUserId}`,
-          {
-            TourStatus: updatedTourStatus
-          },
+          { TourStatus: updatedTourStatus },
           {
             headers: {
               "Content-Type": "application/json",
@@ -1135,7 +1115,7 @@ const TemplatePlaceholder = () => {
                     isReadOnly: isReadOnly || false,
                     isHideLabel: isHideLabel || false,
                     fontSize:
-                      fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                      fontSize || currWidgetsDetails?.options?.fontSize || 12,
                     fontColor:
                       fontColor ||
                       currWidgetsDetails?.options?.fontColor ||
@@ -1173,7 +1153,7 @@ const TemplatePlaceholder = () => {
                     defaultValue: defaultValue,
                     isHideLabel: isHideLabel || false,
                     fontSize:
-                      fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                      fontSize || currWidgetsDetails?.options?.fontSize || 12,
                     fontColor:
                       fontColor ||
                       currWidgetsDetails?.options?.fontColor ||
@@ -1191,7 +1171,7 @@ const TemplatePlaceholder = () => {
                   values: dropdownOptions,
                   defaultValue: defaultValue,
                   fontSize:
-                    fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                    fontSize || currWidgetsDetails?.options?.fontSize || 12,
                   fontColor:
                     fontColor ||
                     currWidgetsDetails?.options?.fontColor ||
@@ -1226,7 +1206,15 @@ const TemplatePlaceholder = () => {
     setFontColor();
   };
 
-  const handleWidgetdefaultdata = (defaultdata) => {
+  const handleWidgetdefaultdata = (defaultdata, isSignWidget) => {
+    if (isSignWidget) {
+      const updatedPdfDetails = [...pdfDetails];
+      const signtypes = defaultdata.signatureType || signatureType;
+      updatedPdfDetails[0].SignatureType = signtypes;
+      // Update the SignatureType with the modified array
+      setPdfDetails(updatedPdfDetails);
+      setSignatureType(signtypes);
+    }
     const options = ["email", "number", "text"];
     let inputype;
     if (defaultdata.textvalidate) {
@@ -1266,7 +1254,7 @@ const TemplatePlaceholder = () => {
                         }
                       : {},
                   fontSize:
-                    fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                    fontSize || currWidgetsDetails?.options?.fontSize || 12,
                   fontColor:
                     fontColor ||
                     currWidgetsDetails?.options?.fontColor ||
@@ -1282,7 +1270,7 @@ const TemplatePlaceholder = () => {
                   status: defaultdata.status,
                   defaultValue: defaultdata.defaultValue,
                   fontSize:
-                    fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                    fontSize || currWidgetsDetails?.options?.fontSize || 12,
                   fontColor:
                     fontColor ||
                     currWidgetsDetails?.options?.fontColor ||
@@ -1599,6 +1587,7 @@ const TemplatePlaceholder = () => {
                         setFontSize={setFontSize}
                         fontColor={fontColor}
                         setFontColor={setFontColor}
+                        isResize={isResize}
                       />
                     )}
                   </div>
@@ -1721,6 +1710,7 @@ const TemplatePlaceholder = () => {
           />
         </ModalUi>
         <WidgetNameModal
+          signatureType={signatureType}
           widgetName={widgetName}
           defaultdata={currWidgetsDetails}
           isOpen={isNameModal}

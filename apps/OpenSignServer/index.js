@@ -24,8 +24,9 @@ if (useLocal !== 'true') {
   try {
     const spacesEndpoint = new AWS.Endpoint(process.env.DO_ENDPOINT);
     const s3Options = {
-      bucket: process.env.DO_SPACE, // globalConfig.S3FilesAdapter.bucket,
+      bucket: process.env.DO_SPACE,
       baseUrl: process.env.DO_BASEURL,
+      fileAcl: 'none',
       region: process.env.DO_REGION,
       directAccess: true,
       preserveFileName: true,
@@ -61,7 +62,7 @@ if (smtpenable) {
       port: process.env.SMTP_PORT || 465,
       secure: smtpsecure,
       auth: {
-        user: process.env.SMTP_USER_EMAIL,
+        user: process.env.SMTP_USERNAME ? process.env.SMTP_USERNAME : process.env.SMTP_USER_EMAIL,
         pass: process.env.SMTP_PASS,
       },
     });

@@ -36,7 +36,8 @@ import {
   getDefaultSignature,
   onClickZoomIn,
   onClickZoomOut,
-  rotatePdfPage
+  rotatePdfPage,
+  signatureTypes
 } from "../constant/Utils";
 import { useParams } from "react-router-dom";
 import Tour from "reactour";
@@ -132,6 +133,7 @@ function SignYourSelf() {
   const [isRotate, setIsRotate] = useState({ status: false, degree: 0 });
   const [isSubscribe, setIsSubscribe] = useState({ plan: "", isValid: true });
   const [isDownloadModal, setIsDownloadModal] = useState(false);
+  const [isResize, setIsResize] = useState(false);
   const divRef = useRef(null);
   const nodeRef = useRef(null);
   const [, drop] = useDrop({
@@ -423,9 +425,7 @@ function SignYourSelf() {
       const getWidth = widgetTypeExist
         ? calculateInitialWidthHeight(dragTypeValue, widgetValue).getWidth
         : defaultWidthHeight(dragTypeValue).width;
-      const getHeight = widgetTypeExist
-        ? calculateInitialWidthHeight(dragTypeValue, widgetValue).getHeight
-        : defaultWidthHeight(dragTypeValue).height;
+      const getHeight = defaultWidthHeight(dragTypeValue).height;
 
       dropObj = {
         xPosition: getWidth / 2 + containerWH.width / 2,
@@ -456,9 +456,7 @@ function SignYourSelf() {
       const getWidth = widgetTypeExist
         ? calculateInitialWidthHeight(widgetValue).getWidth
         : defaultWidthHeight(dragTypeValue).width;
-      const getHeight = widgetTypeExist
-        ? calculateInitialWidthHeight(widgetValue).getHeight
-        : defaultWidthHeight(dragTypeValue).height;
+      const getHeight = defaultWidthHeight(dragTypeValue).height;
       dropObj = {
         xPosition: getXPosition / (containerScale * scale),
         yPosition: getYPosition / (containerScale * scale),
@@ -558,7 +556,7 @@ function SignYourSelf() {
   };
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (xyPostion?.length > 0) {
+      if (xyPostion?.length > 0 && !pdfDetails?.[0]?.IsCompleted) {
         autosavedetails();
       }
     }, 2000);
@@ -617,12 +615,8 @@ function SignYourSelf() {
                 const checkSignUrl = requiredWidgets[i]?.pos?.SignUrl;
                 let checkDefaultSigned =
                   requiredWidgets[i]?.options?.defaultValue;
-                if (!checkSignUrl) {
-                  if (!checkDefaultSigned) {
-                    if (!showAlert) {
-                      showAlert = true;
-                    }
-                  }
+                if (!checkSignUrl && !checkDefaultSigned && !showAlert) {
+                  showAlert = true;
                 }
               }
             }
@@ -649,10 +643,9 @@ function SignYourSelf() {
           return;
         } else {
           setIsUiLoading(true);
-          const existingPdfBytes = pdfArrayBuffer;
           // Load a PDFDocument from the existing PDF bytes
           try {
-            const pdfDoc = await PDFDocument.load(existingPdfBytes);
+            const pdfDoc = await PDFDocument.load(pdfArrayBuffer);
             const isSignYourSelfFlow = true;
             const extUserPtr = pdfDetails[0].ExtUserPtr;
             const HeaderDocId = extUserPtr?.HeaderDocId;
@@ -665,14 +658,19 @@ function SignYourSelf() {
               xyPostion,
               pdfDoc,
               isSignYourSelfFlow,
-              scale,
-              pdfOriginalWH,
-              containerWH
+              scale
             );
             // console.log("pdf", pdfBytes);
             //function for call to embed signature in pdf and get digital signature pdf
-            if (pdfBytes) {
+            if (!pdfBytes?.error) {
               await signPdfFun(pdfBytes, documentId);
+            } else {
+              setIsUiLoading(false);
+              setIsAlert({
+                header: t("error"),
+                isShow: true,
+                alertMessage: t("pdf-uncompatible")
+              });
             }
           } catch (err) {
             setIsUiLoading(false);
@@ -684,10 +682,7 @@ function SignYourSelf() {
               });
             } else {
               console.log("err in signing", err.message);
-              if (
-                err.message ===
-                "PKCS#12 MAC could not be verified. Invalid password?"
-              ) {
+              if (err?.message?.includes("password")) {
                 setIsAlert({
                   header: t("error"),
                   isShow: true,
@@ -754,10 +749,10 @@ function SignYourSelf() {
         alert(t("something-went-wrong-mssg"));
       }
     }
-    //change image width and height to 100/40 in png base64
-    const getNewse64 = await changeImageWH(base64Sign);
-    //remove suffiix of base64
-    const suffixbase64 = getNewse64 && getNewse64.split(",").pop();
+    //change image width and height to 300/120 in png base64
+    const imagebase64 = await changeImageWH(base64Sign);
+    //remove suffiix of base64 (without type)
+    const suffixbase64 = imagebase64 && imagebase64.split(",").pop();
     const params = {
       pdfFile: base64Url,
       docId: documentId,
@@ -783,7 +778,7 @@ function SignYourSelf() {
   const handleStop = (event, dragElement) => {
     setFontSize();
     setFontColor();
-    if (isDragging && dragElement) {
+    if (!isResize && isDragging && dragElement) {
       event.preventDefault();
       const containerScale = getContainerScale(
         pdfOriginalWH,
@@ -1028,7 +1023,6 @@ function SignYourSelf() {
     const getPageNumer = xyPostion.filter(
       (data) => data.pageNumber === pageNumber
     );
-
     if (getPageNumer.length > 0) {
       const getXYdata = getPageNumer[0].pos;
       const getPosData = getXYdata;
@@ -1058,7 +1052,7 @@ function SignYourSelf() {
                 isReadOnly: isReadOnly,
                 isHideLabel: isHideLabel || false,
                 fontSize:
-                  fontSize || currWidgetsDetails?.options?.fontSize || "12",
+                  fontSize || currWidgetsDetails?.options?.fontSize || 12,
                 fontColor:
                   fontColor || currWidgetsDetails?.options?.fontColor || "black"
               }
@@ -1092,7 +1086,6 @@ function SignYourSelf() {
     const getPageNumer = xyPostion.filter(
       (data) => data.pageNumber === pageNumber
     );
-
     if (getPageNumer.length > 0) {
       const getXYdata = getPageNumer[0].pos;
       const getPosData = getXYdata;
@@ -1102,8 +1095,7 @@ function SignYourSelf() {
             ...position,
             options: {
               ...position.options,
-              fontSize:
-                fontSize || currWidgetsDetails?.options?.fontSize || "12",
+              fontSize: fontSize || currWidgetsDetails?.options?.fontSize || 12,
               fontColor:
                 fontColor || currWidgetsDetails?.options?.fontColor || "black"
             }
@@ -1302,6 +1294,7 @@ function SignYourSelf() {
                 />
                 {/* this is modal of signature pad */}
                 <SignPad
+                  signatureTypes={signatureTypes}
                   isSignPad={isSignPad}
                   isStamp={isStamp}
                   setIsImageSelect={setIsImageSelect}
@@ -1400,6 +1393,8 @@ function SignYourSelf() {
                       setFontSize={setFontSize}
                       fontColor={fontColor}
                       setFontColor={setFontColor}
+                      isResize={isResize}
+                      setIsResize={setIsResize}
                     />
                   )}
                 </div>

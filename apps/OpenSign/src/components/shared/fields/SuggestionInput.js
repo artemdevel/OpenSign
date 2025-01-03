@@ -25,7 +25,7 @@ const SuggestionInput = (props) => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         (async () => {
-          const res = await findContact(inputValue);
+          const res = await findContact(inputValue, props.jwttoken);
           if (res?.length > 0) {
             setSuggestions(res);
             setShowSuggestions(true);
@@ -37,13 +37,14 @@ const SuggestionInput = (props) => {
       }, 1000);
     }
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputValue]);
 
   const handleInputChange = async (e) => {
     const value = e.target.value;
-    setInputValue(value?.toLowerCase());
+    setInputValue(value?.toLowerCase()?.replace(/\s/g, ""));
     if (props.onChange) {
-      props.onChange(value);
+      props.onChange(value?.toLowerCase()?.replace(/\s/g, ""));
     }
 
     if (value.trim() === "") {

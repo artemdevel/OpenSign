@@ -9,8 +9,6 @@ import getDocument from './routes/getDocument.js';
 import getContact from './routes/getContact.js';
 import deleteContact from './routes/deleteContact.js';
 import getContactList from './routes/getContactList.js';
-import draftDocument from './routes/draftDocument.js';
-import createTemplate from './routes/createTemplate.js';
 import getTemplate from './routes/getTemplate.js';
 import deletedTemplate from './routes/deleteTemplate.js';
 import getTemplatetList from './routes/getTemplateList.js';
@@ -31,6 +29,7 @@ import createFolder from './routes/createFolder.js';
 import updateFolder from './routes/updateFolder.js';
 import getFolderList from './routes/getFolderList.js';
 import deleteFolder from './routes/deleteFolder.js';
+import draftTemplate from './routes/draftTemplate.js';
 dotenv.config();
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -60,9 +59,6 @@ app.post('/createdocumentwithbinary', upload.array('file', 1), createDocumentwit
 // create Document with co-ordinate
 app.post('/createdocument', createDocumentwithCoordinate);
 
-// create Document with base64 without placeholder
-app.post('/draftdocument', draftDocument);
-
 // create Document with templateId
 app.post('/createdocument/:template_id', createDocumentWithTemplate);
 
@@ -78,11 +74,11 @@ app.delete('/document/:document_id', deleteDocument);
 // get all types of documents on the basis of doctype
 app.get('/documentlist/:doctype', getDocumentList);
 
+// create draft template with file base64
+app.post('/drafttemplate', draftTemplate);
+
 // create Template with co-ordinate
 app.post('/createtemplate', createTemplatewithCoordinate);
-
-// create Template
-app.post('/drafttemplate', createTemplate);
 
 // create Template with binary
 app.post('/createtemplatewithbinary', upload.array('file', 1), createTemplatewithCoordinate);

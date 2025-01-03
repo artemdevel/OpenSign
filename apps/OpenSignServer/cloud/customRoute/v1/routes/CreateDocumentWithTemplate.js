@@ -49,7 +49,7 @@ export default async function createDocumentWithTemplate(request, response) {
   const send_email = request.body.send_email;
   const email_subject = request.body.email_subject;
   const email_body = request.body.email_body;
-  const sendInOrder = request.body.sendInOrder || false;
+  const sendInOrder = request.body.sendInOrder || true;
   const TimeToCompleteDays = request.body.timeToCompleteDays || 15;
 
   try {
@@ -91,6 +91,7 @@ export default async function createDocumentWithTemplate(request, response) {
         if (totalcredits > 0) {
           const templateQuery = new Parse.Query('contracts_Template');
           templateQuery.include('ExtUserPtr');
+          templateQuery.include('ExtUserPtr.TenantId');
           const templateRes = await templateQuery.get(templateId, { useMasterKey: true });
           if (templateRes) {
             const template = JSON.parse(JSON.stringify(templateRes));
@@ -199,6 +200,10 @@ export default async function createDocumentWithTemplate(request, response) {
                 const enableOTP = request.body?.enableOTP;
                 const IsEnableOTP =
                   enableOTP !== undefined ? enableOTP : template?.IsEnableOTP || false;
+                const enableTour = request.body?.enableTour;
+                const isTourEnabled =
+                  enableTour !== undefined ? enableTour : template?.IsTourEnabled || false;
+                object.set('IsTourEnabled', isTourEnabled);
                 object.set('IsEnableOTP', IsEnableOTP);
                 object.set('CreatedBy', template.CreatedBy);
                 object.set('ExtUserPtr', {
@@ -208,6 +213,9 @@ export default async function createDocumentWithTemplate(request, response) {
                 });
                 if (folderId) {
                   object.set('Folder', folderPtr);
+                }
+                if (template?.FileAdapterId) {
+                  object.set('FileAdapterId', template?.FileAdapterId);
                 }
                 const newACL = new Parse.ACL();
                 newACL.setPublicReadAccess(false);
@@ -269,7 +277,7 @@ export default async function createDocumentWithTemplate(request, response) {
                         orgName +
                         "</td></tr> <tr> <td style='font-weight:bold;font-family:sans-serif;font-size:15px'>Expires on</td><td> </td> <td style='color:#626363;font-weight:bold'>" +
                         localExpireDate +
-                        "</td></tr><tr> <td></td> <td> </td></tr></table> </div> <div style='margin-left:70px'><a href=" +
+                        "</td></tr><tr> <td></td> <td> </td></tr></table> </div> <div style='margin-left:70px'><a target=_blank href=" +
                         signPdf +
                         "> <button style='padding: 12px 12px 12px 12px;background-color: #d46b0f;color: white;  border: 0px;box-shadow: rgba(0, 0, 0, 0.05) 0px 6px 24px 0px,rgba(0, 0, 0, 0.08) 0px 0px 0px 1px;font-weight:bold;margin-top:30px;'>Sign here</button></a> </div> <div style='display: flex; justify-content: center;margin-top: 10px;'> </div></div></div><div><p> This is an automated email from OpenSign™. For any queries regarding this email, please contact the sender " +
                         sender +

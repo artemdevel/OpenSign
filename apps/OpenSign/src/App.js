@@ -35,6 +35,8 @@ const GenerateToken = lazy(() => import("./pages/GenerateToken"));
 const Webhook = lazy(() => import("./pages/Webhook"));
 const AddAdmin = lazy(() => import("./pages/AddAdmin"));
 const UpdateExistUserAdmin = lazy(() => import("./pages/UpdateExistUserAdmin"));
+const DraftTemplate = lazy(() => import("./pages/DraftTemplate"));
+const Preferences = lazy(() => import("./pages/Preferences"));
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 const AppLoader = () => {
@@ -198,8 +200,16 @@ function App() {
                 </>
               )}
               <Route path="/users" element={<UserList />} />
+              <Route
+                path="/preferences"
+                element={<LazyPage Page={Preferences} />}
+              />
             </Route>
             <Route path="/sso" element={<SSOVerify />} />
+            <Route
+              path="/drafttemplate/:jwttoken"
+              element={<DraftTemplate />}
+            />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </BrowserRouter>

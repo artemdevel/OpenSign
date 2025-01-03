@@ -53,7 +53,7 @@ async function sendMail(doc, signer) {
     receiver_phone: signer?.Phone || '',
     expiry_date: localExpireDate,
     company_name: doc?.ExtUserPtr?.Company || '',
-    signing_url: `<a href=${signPdf}>Sign here</a>`,
+    signing_url: `<a href=${signPdf} target=_blank>Sign here</a>`,
   };
   const mail = replaceMailVaribles(subject, body, variables);
 
@@ -88,7 +88,7 @@ export default async function autoReminder(request, response) {
     docQuery.exists('Signers');
     docQuery.exists('SignedUrl');
     docQuery.descending('createdAt');
-    docQuery.include('Signers,AuditTrail.UserPtr,ExtUserPtr');
+    docQuery.include('Signers,AuditTrail.UserPtr,ExtUserPtr,ExtUserPtr.TenantId');
     docQuery.notEqualTo('IsCompleted', true);
     docQuery.notEqualTo('IsDeclined', true);
     docQuery.notEqualTo('IsArchive', true);

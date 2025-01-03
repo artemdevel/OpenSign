@@ -15,7 +15,10 @@ import {
   copytoData,
   fetchUrl,
   getSignedUrl,
-  replaceMailVaribles
+  getTenantDetails,
+  handleSignatureType,
+  replaceMailVaribles,
+  signatureTypes
 } from "../constant/Utils";
 import Confetti from "react-confetti";
 import EditorToolbar, {
@@ -77,6 +80,7 @@ const ReportTable = (props) => {
   const [isDownloadModal, setIsDownloadModal] = useState(false);
   const [isEmbed, setIsEmbed] = useState(false);
   const [isPublicTour, setIsPublicTour] = useState();
+  const [signatureType, setSignatureType] = useState([]);
   const Extand_Class = localStorage.getItem("Extand_Class");
   const extClass = Extand_Class && JSON.parse(Extand_Class);
   const startIndex = (currentPage - 1) * props.docPerPage;
@@ -195,6 +199,33 @@ const ReportTable = (props) => {
     }
   }, [isMoreDocs, pageNumbers, currentPage, setIsNextRecord]);
 
+  //function to fetch tenant Details
+  const fetchTenantDetails = async () => {
+    const user = JSON.parse(
+      localStorage.getItem(
+        `Parse/${localStorage.getItem("parseAppId")}/currentUser`
+      )
+    );
+    if (user) {
+      try {
+        const tenantDetails = await getTenantDetails(user?.objectId);
+        if (tenantDetails && tenantDetails === "user does not exist!") {
+          alert(t("user-not-exist"));
+        } else if (tenantDetails) {
+          const signatureType = tenantDetails?.SignatureType || [];
+          const filterSignTypes = signatureType?.filter(
+            (x) => x.enabled === true
+          );
+          return filterSignTypes;
+        }
+      } catch (e) {
+        alert(t("user-not-exist"));
+      }
+    } else {
+      alert(t("user-not-exist"));
+    }
+  };
+
   // `handleURL` is used to open microapp
   const handleURL = async (item, act) => {
     if (props.ReportName === "Templates") {
@@ -203,9 +234,7 @@ const ReportTable = (props) => {
       } else {
         setActLoader({ [`${item.objectId}_${act.btnId}`]: true });
         try {
-          const params = {
-            templateId: item.objectId
-          };
+          const params = { templateId: item.objectId };
           const templateDeatils = await axios.post(
             `${localStorage.getItem("baseUrl")}functions/getTemplate`,
             params,
@@ -249,6 +278,16 @@ const ReportTable = (props) => {
                 }
               }
             }
+            const tenantSignTypes = await fetchTenantDetails();
+            const docSignTypes = Doc?.SignatureType || signatureTypes;
+            const updatedSignatureType = await handleSignatureType(
+              tenantSignTypes,
+              docSignTypes
+            );
+            const SignatureType =
+              updatedSignatureType.length > 0
+                ? { SignatureType: updatedSignatureType }
+                : {};
             let placeholdersArr = [];
             if (Doc.Placeholders?.length > 0) {
               placeholdersArr = Doc.Placeholders;
@@ -274,7 +313,9 @@ const ReportTable = (props) => {
                 SendinOrder: Doc?.SendinOrder || false,
                 AutomaticReminders: Doc?.AutomaticReminders || false,
                 RemindOnceInEvery: Doc?.RemindOnceInEvery || 5,
-                IsEnableOTP: Doc?.IsEnableOTP || false
+                IsEnableOTP: Doc?.IsEnableOTP || false,
+                FileAdapterId: Doc?.FileAdapterId || "",
+                ...SignatureType
               };
               try {
                 const res = await axios.post(
@@ -602,25 +643,15 @@ const ReportTable = (props) => {
 
   async function checkTourStatus() {
     const cloudRes = await Parse.Cloud.run("getUserDetails");
-    const res = { data: cloudRes.toJSON() };
-    if (res.data && res.data.TourStatus && res.data.TourStatus.length > 0) {
-      const tourStatus = res.data.TourStatus;
-      // console.log("res ", res.data.TourStatus);
+    if (cloudRes) {
+      const extUser = JSON.parse(JSON.stringify(cloudRes));
+      localStorage.setItem("Extand_Class", JSON.stringify([extUser]));
+      const tourStatus = extUser?.TourStatus || [];
       setTourStatusArr(tourStatus);
-      const filteredtourStatus = tourStatus.filter(
-        (obj) => obj["templateTour"]
-      );
-      if (filteredtourStatus.length > 0) {
-        const templateTour = filteredtourStatus[0]["templateTour"];
-
-        if (templateTour) {
-          setIsTour(false);
-        } else {
-          setIsTour(true);
-        }
-      } else {
-        setIsTour(true);
-      }
+      const templateTour = tourStatus.find(
+        (obj) => obj.templateTour
+      )?.templateTour;
+      setIsTour(!templateTour);
     } else {
       setIsTour(true);
     }
@@ -671,12 +702,21 @@ const ReportTable = (props) => {
     const url = item?.SignedUrl || item?.URL || "";
     const pdfName = item?.Name || "exported_file";
     const isCompleted = item?.IsCompleted || false;
+    const templateId = props?.ReportName === "Templates" && item.objectId;
+    const docId = props?.ReportName !== "Templates" && item.objectId;
+    const fileAdapterId = item?.FileAdapterId ? item?.FileAdapterId : "";
+
     if (url) {
       try {
         if (isCompleted) {
           setIsDownloadModal({ [item.objectId]: true });
         } else {
-          const signedUrl = await getSignedUrl(url);
+          const signedUrl = await getSignedUrl(
+            url,
+            docId,
+            fileAdapterId,
+            templateId
+          );
           await fetchUrl(signedUrl, pdfName);
         }
         setActLoader({});
@@ -711,7 +751,7 @@ const ReportTable = (props) => {
       receiver_phone: userDetails?.Phone || "",
       expiry_date: localExpireDate,
       company_name: doc.ExtUserPtr.Company,
-      signing_url: `<a href=${signPdf}>Sign here</a>`
+      signing_url: `<a href=${signPdf} target=_blank>Sign here</a>`
     };
     const res = replaceMailVaribles(subject, "", variables);
 
@@ -740,7 +780,7 @@ const ReportTable = (props) => {
       receiver_phone: userDetails?.Phone || "",
       expiry_date: localExpireDate,
       company_name: doc.ExtUserPtr.Company,
-      signing_url: `<a href=${signPdf}>Sign here</a>`
+      signing_url: `<a href=${signPdf} target=_blank>Sign here</a>`
     };
     const res = replaceMailVaribles("", body, variables);
 
@@ -781,7 +821,7 @@ const ReportTable = (props) => {
       receiver_phone: user?.signerPtr?.Phone || "",
       expiry_date: localExpireDate,
       company_name: doc?.ExtUserPtr?.Company || "",
-      signing_url: `<a href=${signPdf}>Sign here</a>`
+      signing_url: `<a href=${signPdf} target=_blank>Sign here</a>`
     };
 
     const subject =
@@ -910,6 +950,13 @@ const ReportTable = (props) => {
         }
       );
       const templateRes = axiosRes.data && axiosRes.data.result;
+      const tenantSignTypes = await fetchTenantDetails();
+      const docSignTypes = templateRes?.SignatureType || signatureTypes;
+      const updatedSignatureType = await handleSignatureType(
+        tenantSignTypes,
+        docSignTypes
+      );
+      setSignatureType(updatedSignatureType);
       setPlaceholders(templateRes?.Placeholders);
       setTemplateDetails(templateRes);
       setIsLoader({});
@@ -1165,7 +1212,7 @@ const ReportTable = (props) => {
           <Loader />
         </div>
       )}
-      <div className="p-2 w-full overflow-hidden bg-base-100 text-base-content op-card shadow-lg">
+      <div className="p-2 w-full bg-base-100 text-base-content op-card shadow-lg">
         {isCelebration && (
           <div className="relative z-[1000]">
             <Confetti
@@ -1226,11 +1273,17 @@ const ReportTable = (props) => {
           )}
         </div>
         <div
-          className={`${
-            isDashboard && props.List?.length > 0 ? "min-h-[317px]" : "h-full"
-          } overflow-auto w-full`}
+          className={`overflow-auto w-full border-b ${
+            props.List?.length > 0
+              ? isDashboard
+                ? "min-h-[317px]"
+                : currentList?.length === props.docPerPage
+                  ? "h-fit"
+                  : "h-screen"
+              : ""
+          }`}
         >
-          <table className="op-table border-collapse w-full ">
+          <table className="op-table border-collapse w-full mb-4">
             <thead className="text-[14px]">
               <tr className="border-y-[1px]">
                 {props.heading?.map((item, index) => (
@@ -1311,7 +1364,14 @@ const ReportTable = (props) => {
                         </td>
                       </tr>
                     ) : (
-                      <tr className="border-y-[1px]" key={index}>
+                      <tr
+                        className={`${
+                          currentList?.length === props.docPerPage
+                            ? "last:border-none"
+                            : ""
+                        } border-y-[1px] `}
+                        key={index}
+                      >
                         {props.heading.includes("Sr.No") && (
                           <th className="px-4 py-2">
                             {startIndex + index + 1}
@@ -1479,13 +1539,13 @@ const ReportTable = (props) => {
                                         }
                                         className="op-btn op-btn-primary"
                                       >
-                                        {t("submit")}
+                                        {t("yes")}
                                       </button>
                                       <button
                                         onClick={() => handleClose(item)}
                                         className="op-btn op-btn-secondary"
                                       >
-                                        {t("cancel")}
+                                        {t("no")}
                                       </button>
                                     </div>
                                   </div>
@@ -1511,14 +1571,14 @@ const ReportTable = (props) => {
                                         <span>{t("public-url-copy")}</span>
                                         <div className=" flex items-center justify-between gap-3 p-[2px] ">
                                           <div className="w-[280px] whitespace-nowrap overflow-hidden text-ellipsis">
-                                            <span
-                                              onClick={() =>
-                                                copytoProfileLink()
-                                              }
+                                            <a
+                                              rel="noreferrer"
+                                              target="_blank"
+                                              href={publicUrl()}
                                               className="ml-[2px] underline underline-offset-2 cursor-pointer text-blue-800"
                                             >
                                               {publicUrl()}
-                                            </span>
+                                            </a>
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <RWebShare
@@ -1535,7 +1595,7 @@ const ReportTable = (props) => {
                                               </button>
                                             </RWebShare>
                                             <button
-                                              className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm"
+                                              className="op-btn op-btn-primary op-btn-outline op-btn-xs md:op-btn-sm md:w-[100px]"
                                               onClick={() =>
                                                 copytoProfileLink()
                                               }
@@ -1561,7 +1621,7 @@ const ReportTable = (props) => {
                                           className="mt-3 op-btn op-btn-primary"
                                           onClick={() => navigate("/profile")}
                                         >
-                                          {t("add")}
+                                          {t("Proceed")}
                                         </button>
                                       </div>
                                     )}
@@ -1590,9 +1650,7 @@ const ReportTable = (props) => {
                                         className={
                                           act.action !== "option"
                                             ? `${
-                                                act?.btnColor
-                                                  ? act.btnColor
-                                                  : ""
+                                                act?.btnColor || ""
                                               } op-btn op-btn-sm mr-1`
                                             : "text-base-content focus:outline-none text-lg mr-2 relative"
                                         }
@@ -1609,9 +1667,10 @@ const ReportTable = (props) => {
                                                 )}`}
                                           </span>
                                         )}
+                                        {/* template report */}
                                         {isOption[item.objectId] &&
                                           act.action === "option" && (
-                                            <ul className="absolute -right-1 top-auto z-[70] w-max op-dropdown-content op-menu shadow bg-base-100 text-base-content rounded-box">
+                                            <ul className="absolute -right-1 top-auto z-[70] w-max op-dropdown-content op-menu shadow-black/20 shadow bg-base-100 text-base-content rounded-box">
                                               {act.subaction?.map((subact) => (
                                                 <li
                                                   key={subact.btnId}
@@ -1665,9 +1724,10 @@ const ReportTable = (props) => {
                                         {t(`btnLabel.${act.btnLabel}`)}
                                       </span>
                                     )}
+                                    {/* doc report */}
                                     {isOption[item.objectId] &&
                                       act.action === "option" && (
-                                        <ul className="absolute -right-1 top-auto z-[70] w-max op-dropdown-content op-menu shadow bg-base-100 text-base-content rounded-box">
+                                        <ul className="absolute -right-1 top-auto z-[70] w-max op-dropdown-content op-menu shadow-black/20 shadow bg-base-100 text-base-content rounded-box">
                                           {act.subaction?.map((subact) => (
                                             <li
                                               key={subact.btnId}
@@ -1920,6 +1980,7 @@ const ReportTable = (props) => {
                                   Placeholders={placeholders}
                                   item={templateDeatils}
                                   handleClose={handleQuickSendClose}
+                                  signatureType={signatureType}
                                 />
                               )}
                             </ModalUi>
@@ -2129,6 +2190,24 @@ const ReportTable = (props) => {
               )}
             </tbody>
           </table>
+          {props.List?.length <= 0 && (
+            <div
+              className={`${
+                isDashboard ? "h-[317px]" : ""
+              } flex flex-col items-center justify-center w-ful bg-base-100 text-base-content rounded-xl py-4`}
+            >
+              <div className="w-[60px] h-[60px] overflow-hidden">
+                <img
+                  className="w-full h-full object-contain"
+                  src={pad}
+                  alt="img"
+                />
+              </div>
+              <div className="text-sm font-semibold">
+                {t("no-data-avaliable")}
+              </div>
+            </div>
+          )}
         </div>
         <div className="op-join flex flex-wrap items-center p-2">
           {props.List.length > props.docPerPage && (
@@ -2160,24 +2239,6 @@ const ReportTable = (props) => {
             </button>
           )}
         </div>
-        {props.List?.length <= 0 && (
-          <div
-            className={`${
-              isDashboard ? "h-[317px]" : ""
-            } flex flex-col items-center justify-center w-ful bg-base-100 text-base-content rounded-xl py-4`}
-          >
-            <div className="w-[60px] h-[60px] overflow-hidden">
-              <img
-                className="w-full h-full object-contain"
-                src={pad}
-                alt="img"
-              />
-            </div>
-            <div className="text-sm font-semibold">
-              {t("no-data-avaliable")}
-            </div>
-          </div>
-        )}
         <ModalUi
           title={t("add-contact")}
           isOpen={isContactform}

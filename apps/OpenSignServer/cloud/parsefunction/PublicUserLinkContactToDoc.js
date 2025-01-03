@@ -31,7 +31,13 @@ const saveRoleContact = async contact => {
   contactQuery.set('CreatedBy', contact.CreatedBy);
   contactQuery.set('UserId', contact.UserId);
   contactQuery.set('UserRole', 'contracts_Guest');
-  contactQuery.set('TenantId', contact.TenantId);
+  if (contact?.TenantId) {
+    contactQuery.set('TenantId', {
+      __type: 'Pointer',
+      className: 'partners_Tenant',
+      objectId: contact.TenantId,
+    });
+  }
   contactQuery.set('IsDeleted', false);
   const acl = new Parse.ACL();
   acl.setReadAccess(contact.CreatedBy.objectId, true);
@@ -55,7 +61,7 @@ const createDocumentFromTemplate = async (template, existContact, index) => {
       object.set('Description', template?.Description);
       object.set('Note', template?.Note);
       object.set('TimeToCompleteDays', template?.TimeToCompleteDays || 15);
-      object.set('SendinOrder', template?.SendinOrder);
+      object.set('SendinOrder', template?.SendinOrder || false);
       object.set('AutomaticReminders', template?.AutomaticReminders || false);
       object.set('RemindOnceInEvery', template?.RemindOnceInEvery || 5);
       object.set('URL', template?.URL);
@@ -63,6 +69,11 @@ const createDocumentFromTemplate = async (template, existContact, index) => {
       object.set('ExtUserPtr', template?.ExtUserPtr);
       object.set('OriginIp', template?.OriginIp || '');
       object.set('IsEnableOTP', template?.IsEnableOTP || false);
+      object.set('IsTourEnabled', template?.IsTourEnabled || false);
+      object.set('FileAdapterId', template?.FileAdapterId || '');
+      if (template?.SignatureType?.length > 0) {
+        object.set('SignatureType', template?.SignatureType);
+      }
       let signers = template?.Signers || [];
       const signerobj = {
         __type: 'Pointer',
@@ -97,7 +108,7 @@ const sendMailToAllSigners = async docId => {
   try {
     //get document details that recenlty created from public template
     const docQuery = new Parse.Query('contracts_Document');
-    docQuery.include('ExtUserPtr');
+    docQuery.include('ExtUserPtr,ExtUserPtr.TenantId');
     docQuery.include('Signers');
     const docRes = await docQuery.get(docId, { useMasterKey: true });
     const Doc = JSON.parse(JSON.stringify(docRes));
@@ -168,7 +179,7 @@ const sendMailToAllSigners = async docId => {
                   receiver_phone: signerMail[i]?.Phone || '',
                   expiry_date: localExpireDate,
                   company_name: orgName,
-                  signing_url: `<a href=${signPdf}>Sign here</a>`,
+                  signing_url: `<a href=${signPdf} target=_blank>Sign here</a>`,
                 };
                 replaceVar = replaceMailVaribles(requestSubject, htmlReqBody, variables);
               }
@@ -246,6 +257,7 @@ const deductcount = async _resSub => {
 export default async function PublicUserLinkContactToDoc(req) {
   const email = req.params.email;
   const templateid = req.params.templateid;
+  const signatureType = req.params.signatureType;
   const name = req.params.name;
   const phone = req.params.phone;
   const role = req.params.role;
@@ -254,6 +266,7 @@ export default async function PublicUserLinkContactToDoc(req) {
       // Execute the query to get the template with the specified 'templateid'
       const docQuery = new Parse.Query('contracts_Template');
       docQuery.include('ExtUserPtr');
+      docQuery.include('ExtUserPtr.TenantId');
       const tempRes = await docQuery.get(templateid, { useMasterKey: true });
       // Check if the template was found; if not, throw an error indicating the template was not found
       if (!tempRes) {
@@ -292,8 +305,11 @@ export default async function PublicUserLinkContactToDoc(req) {
             const existContact = await contactCls.first({ useMasterKey: true });
             if (existContact) {
               const template_json = JSON.parse(JSON.stringify(tempRes));
+              const _template_json = template_json;
+              _template_json.SignatureType =
+                signatureType?.length > 0 ? signatureType : _template_json?.SignatureType;
               //update contact in placeholder, signers and update ACl in provide document
-              const docRes = await createDocumentFromTemplate(template_json, existContact, index);
+              const docRes = await createDocumentFromTemplate(_template_json, existContact, index);
               if (docRes) {
                 await deductcount(_resSub);
                 //condition will execute only if sendInOrder will be false for send email to all signers at a time.
@@ -315,12 +331,15 @@ export default async function PublicUserLinkContactToDoc(req) {
                   Email: email,
                   Phone: _extUser?.Phone ? _extUser.Phone : '',
                   CreatedBy: _tempRes.CreatedBy,
-                  TenantId: _tempRes.ExtUserPtr.TenantId,
+                  TenantId: _tempRes.ExtUserPtr?.TenantId?.objectId,
                 };
                 const template_json = JSON.parse(JSON.stringify(tempRes));
+                const _template_json = template_json;
+                _template_json.SignatureType =
+                  signatureType?.length > 0 ? signatureType : _template_json?.SignatureType;
                 // if user present on platform create contact on the basis of extended user details
                 const contactRes = await saveRoleContact(contact);
-                const docRes = await createDocumentFromTemplate(template_json, contactRes, index);
+                const docRes = await createDocumentFromTemplate(_template_json, contactRes, index);
                 if (docRes) {
                   await deductcount(_resSub);
                   //condition will execute only if sendInOrder will be false for send email to all signers at a time.
@@ -342,14 +361,17 @@ export default async function PublicUserLinkContactToDoc(req) {
                       Email: email,
                       Phone: phone,
                       CreatedBy: _tempRes.CreatedBy,
-                      TenantId: _tempRes.ExtUserPtr.TenantId,
+                      TenantId: _tempRes.ExtUserPtr?.TenantId?.objectId,
                     };
                     const template_json = JSON.parse(JSON.stringify(tempRes));
+                    const _template_json = template_json;
+                    _template_json.SignatureType =
+                      signatureType?.length > 0 ? signatureType : _template_json?.SignatureType;
                     // Create new contract on the basis provided contact details by user and userId from _User class
                     const contactRes = await saveRoleContact(contact);
                     //update contact in placeholder, signers and update ACl in provide document
                     const docRes = await createDocumentFromTemplate(
-                      template_json,
+                      _template_json,
                       contactRes,
                       index
                     );
@@ -379,14 +401,17 @@ export default async function PublicUserLinkContactToDoc(req) {
                       Email: email,
                       Phone: phone,
                       CreatedBy: _tempRes.CreatedBy,
-                      TenantId: _tempRes.ExtUserPtr.TenantId,
+                      TenantId: _tempRes.ExtUserPtr?.TenantId?.objectId,
                     };
                     const template_json = JSON.parse(JSON.stringify(tempRes));
+                    const _template_json = template_json;
+                    _template_json.SignatureType =
+                      signatureType?.length > 0 ? signatureType : _template_json?.SignatureType;
                     // Create new contract on the basis provided contact details by user and userId from _User class
                     const contactRes = await saveRoleContact(contact);
                     //update contact in placeholder, signers and update ACl in provide document
                     const docRes = await createDocumentFromTemplate(
-                      template_json,
+                      _template_json,
                       contactRes,
                       index
                     );
